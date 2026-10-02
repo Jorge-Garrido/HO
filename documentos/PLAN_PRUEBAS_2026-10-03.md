@@ -35,6 +35,38 @@ decidir qué se borra (sección D).
 
 ## A. Volver a medir el OCR (COOSALUD y FAMISANAR ya están copiados)
 
+### Resultado (ejecutado 2026-10-02, tarde)
+
+| COOSALUD | Antes (`disco_d/final`) | Después (`disco_d2/ocr2`) |
+|---|---|---|
+| Facturas con *grave* | 586 | **491** |
+| Autorización *grave* por OCR | 111 | **26** |
+| Autorización confirmada por OCR | 3.367 | 3.386 |
+| Hallazgos OCR (revisión humana) | 227 | 251 |
+| Medicamentos *grave* | 228 | 0 (son *aviso*) |
+
+FAMISANAR sin cambios (su OCR ya acertaba: 2 *grave*). Regresión: NUEVA EPS 101/101 idénticas;
+COOSALUD local 47/48 + 1 mejora (FE4372078).
+
+**Revisión a ojo de 6 casos** (solo la línea del número):
+- 2 eran errores del OCR: 6 leído como 8, y una raya del escaneo que convirtió el 0 en P.
+- 2 son dudosos: la plantilla de COOSALUD usa números de estilo antiguo, donde 6/8 y 2/3 se parecen.
+- 1 parece error real.
+- FE4421223 (NUEVA EPS, de la línea base) se confirmó como **error real**: el papel dice
+  319220657 y el hospital registró 219220657.
+
+**Lo que se cambió por esa revisión:**
+1. Una diferencia leída por dos motores **no se afirma** si Tesseract duda justo en los dígitos
+   que difieren: el dígito esperado está entre sus alternativas. Va a revisión humana.
+2. Lecturas con letras donde se espera un número no cuentan como voto.
+3. Autorizaciones repartidas entre RIPS, PDF y escaneo (todo dentro del conjunto mayor) son *aviso*.
+4. Se descartó un intento de "un dígito distinto = aviso", porque escondía el error real de
+   FE4421223. El criterio tiene que ser la confianza por dígito, no la cantidad de dígitos.
+
+**Pendiente de A:** revisar con auditoría los 26 *grave* de OCR que quedan (lectura segura de
+dos motores) y probar el experimento de caja por componentes conectados.
+
+
 ```bash
 source scripts/preparar_db_prueba.sh salidas/disco_d2
 VALIDADOR_USUARIO=agente-claude .venv/bin/validador reglas importar referencia/reglas/normativa.yaml   # v2 → id 2 (ya trae los sinónimos)

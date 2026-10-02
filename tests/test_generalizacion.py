@@ -194,7 +194,9 @@ def test_escaneo_recortado_o_parcial_no_es_grave():
     assert r.resultado == cfg.si_escaneo_recortado == "aviso" and r.valor_final == "17196996"
     r = campo("15825694", "15825694,15836151", "15825694,15836151")
     assert r.resultado == "aviso" and r.documento_sospechoso == "autorizacion_scan"
-    assert campo("27196996", "17196996", "17196996").resultado == "grave"  # dígito distinto: sí es grave
+    # Un dígito sustituido que el OCR lee con seguridad (dos motores, sin duda): grave. La duda por
+    # dígito se resuelve en la cascada (ver test_ocr), no aquí.
+    assert campo("27196996", "17196996", "17196996").resultado == "grave"
 
 
 def test_descripcion_identica_no_se_confunde_con_codigo_recortado():
@@ -211,3 +213,15 @@ def test_rips_con_varias_autorizaciones_en_un_servicio():
 
     datos = rips_dict(Caso(autorizacion="20076906,20076944"))
     assert rips.desde_dict(datos).campos["numero_autorizacion"].valor == "20076906,20076944"
+
+
+def test_autorizaciones_repartidas_entre_documentos_son_aviso():
+    from validador.base.schemas import CampoExtraido
+    from validador.severity import evaluar_campo
+
+    r = evaluar_campo("numero_autorizacion", [
+        CampoExtraido(campo="numero_autorizacion", valor="17983717,17983759", fuente="rips"),
+        CampoExtraido(campo="numero_autorizacion", valor="17983759", fuente="pdf_factura"),
+        CampoExtraido(campo="numero_autorizacion", valor="17983717", fuente="autorizacion_scan", confianza=0.98),
+    ], Config())
+    assert r.resultado == "aviso" and r.valor_final == "17983717,17983759"

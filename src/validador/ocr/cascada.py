@@ -221,6 +221,8 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
     motores: dict[str, set[str]] = {}
 
     def votar(valor: str, motor: str) -> None:
+        if e.isdigit() and not valor.isdigit():
+            return  # 'P' por '0' tras una raya del escaneo: no es una lectura válida de un número
         votos[valor] += 1
         motores.setdefault(valor, set()).add(motor)
 
@@ -292,6 +294,12 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
     if votos:
         valor, n = votos.most_common(1)[0]
         if len(motores[valor]) >= 2 and valor != e:
+            if digitos:
+                # Dos motores leen otro valor, pero Tesseract duda justo en los dígitos que difieren
+                # (el esperado está entre sus alternativas): fuentes de números antiguos (6/8, 2/3) o
+                # rayas del escaneo. No se afirma la diferencia: revisión humana.
+                return Resolucion(campo, esperado, "no_legible", None, valor, 0.5, lecturas,
+                                  f"dos motores leen {valor}, pero el dígito que difiere es dudoso")
             return Resolucion(campo, esperado, "diferencia", "tesseract", valor, 0.9, lecturas,
                               f"dos motores distintos leen {valor}")
     if digitos:

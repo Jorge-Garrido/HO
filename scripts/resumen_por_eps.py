@@ -6,7 +6,7 @@ import json, glob, collections
 import sys
 base = sys.argv[1] if len(sys.argv) > 1 else "salidas/disco_d/final"
 por_eps = collections.defaultdict(list); lotes = []
-for d in sorted(glob.glob(base + "/2026-*")):
+for d in sorted(x for x in glob.glob(base + "/2026-*") if __import__("os").path.exists(x + "/resumen.json")):
     res = json.load(open(d + "/resumen.json")); eps = res["lote"]["nombre"].split(" - ")[0]
     rs = [json.load(open(f)) for f in glob.glob(d + "/facturas/*.json")]
     por_eps[eps] += rs

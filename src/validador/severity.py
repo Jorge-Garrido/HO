@@ -58,6 +58,18 @@ def evaluar_campo(campo: str, extraidos: list[CampoExtraido], cfg: Config) -> Re
         base_etapa = {"etapa_resolucion": ext_autoridad.etapa, "confianza": ext_autoridad.confianza}
         if not distintos:
             return ResultadoCampo(valor_final=ref, resultado="ok", motivo="coincide con el documento de la EPS", **base, **base_etapa)
+        if regla.comparador == "conjunto":
+            # Autorizaciones repartidas entre documentos (el RIPS trae una por servicio, el PDF y
+            # el escaneo muestran una cada uno): si todo cabe en el conjunto mayor, no hay contradicción.
+            conjuntos = {f: set(v.split(",")) for f, v in valores.items()}
+            mayor = max(conjuntos.values(), key=len)
+            if all(c <= mayor for c in conjuntos.values()) and len(mayor) > 1:
+                parciales = [f for f, c in conjuntos.items() if c != mayor]
+                return ResultadoCampo(
+                    valor_final=",".join(sorted(mayor)), resultado=regla.si_subconjunto, documento_sospechoso=",".join(parciales),
+                    motivo=f"{', '.join(parciales)} trae solo parte de las autorizaciones ({','.join(sorted(mayor))}); no hay valores contradictorios",
+                    **base, **base_etapa,
+                )
         digitales = {valores[f] for f in distintos}
         if len(digitales) == 1 and len(distintos) == len(valores) - 1:
             digital = next(iter(digitales))
