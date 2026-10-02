@@ -33,6 +33,7 @@ def desde_pdf(pdf: pdf_text.PdfTexto, doc: DocumentoExtraido) -> DocumentoExtrai
     if pdf.todo_escaneado:
         doc.requiere_ocr = True
         return doc
+    doc.texto = "\n".join(p.texto for p in pdf.paginas)  # para el motor de reglas (no se serializa)
     primera = next(p for p in pdf.paginas if not p.sin_texto)
     if l := pdf_text.valor_a_la_derecha(primera, "Tipo y número de identificación:", MAX_Y_ENCABEZADO):
         doc.poner("paciente_id", normalize.documento_id_texto(l.texto), l.texto, primera.numero)

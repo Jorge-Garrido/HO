@@ -130,6 +130,11 @@ class Config(BaseModel):
     si_ocr_incierto_difiere: Severidad = "info"
     autorizacion_no_legible: Severidad = "aviso"
 
+    # Motor de reglas normativas (las reglas, catálogos y contratos viven en la base de datos).
+    reglas_habilitadas: bool = True
+    # En producción: True. Quien aprueba una versión de reglas no puede ser quien la creó.
+    aprobacion_cuatro_ojos: bool = False
+
     db_url: str = "sqlite:///salidas/validador.db"
 
 

@@ -203,6 +203,10 @@ def _explicar_linea(r: ResultadoFactura, l: ResultadoLinea) -> tuple[str, str, s
 
 
 def _explicar_hallazgo(r: ResultadoFactura, h: Hallazgo) -> tuple[str, str, str]:
+    if h.regla is not None:
+        # Hallazgo del motor de reglas: la explicación viene de la regla (dato, no código).
+        glosa = f" Glosa potencial {h.regla.codigo_glosa}." if h.regla.codigo_glosa else ""
+        return (f"{h.motivo} Norma: {h.regla.norma}.{glosa}", h.regla.verificar or "", h.regla.accion or "")
     arch = _archivos(r)
     m = h.motivo
     if h.tipo == "hc" and "facturada como" in m:

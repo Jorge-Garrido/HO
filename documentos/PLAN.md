@@ -6,6 +6,7 @@
 - Antes de codificar cada fase, resume qué vas a hacer y lista tus dudas. No avances de fase hasta cumplir los criterios de aceptación.
 - Python 3.11+, `pydantic`, `pytest`, `lxml`, `pymupdf`, `openpyxl`, `sqlalchemy`. Sin datos personales en logs ni en el repositorio.
 - **Estado:** prototipo de Fases 0 y 1 implementado en `src/validador` (ver sección 13).
+- **Reglas normativas (v0.2):** reglas, catálogos y contratos versionados en la base. Ver `documentos/ARQUITECTURA_REGLAS.md`.
 - Decisiones de diseño abiertas: ver sección 12. Pregunta antes de decidirlas por tu cuenta.
 
 ## 1. Contexto y objetivo
@@ -297,6 +298,15 @@ Total estimado: 9-10 semanas-persona.
 - Cambio respecto a la sección 6: "solo el escaneo difiere con lectura de un solo motor" es info (configurable `si_ocr_incierto_difiere`), no aviso.
 - Estructura actual de `src/validador/`: `base/` (config, schemas) · `data_preprocessing/` (normalize, layout, recorte de imágenes) · `ingest/` (lectura de cada documento, PDF unificados) · `localizar.py` (localizador genérico) · `ocr/` (motor, cascada, Tesseract) · `compare.py`, `attribution.py`, `severity.py` (decisión) · `tarifario/` · `explicar.py`, `salida_errores.py`, `report.py` (salidas) · `store/` (base de datos) · `execute/` (línea de comandos; aquí irá la API).
 - Pendiente: modelo pequeño por API para lo no concluyente, tarifario por contrato/EPS, API + dashboard + buzón (Fase 5) y despliegue.
+
+## 14. Motor de reglas normativas (v0.2, 2026-10-01)
+
+- Reglas de la Res. 948/2026 y la Res. 2284/2023 (matriz SEMCOL) como **datos versionados**: primitivas genéricas + parámetros + condición + vigencia legal + cita. Semilla: `referencia/reglas/normativa.yaml` (21 reglas).
+- Catálogos (CIE10, CUPSRIPS, tablas SISPRO) y contratos por EPS versionados, con vigencia; ciclo borrador → en_prueba (sombra) → aprobada → vigente con auditoría.
+- Cada resultado guarda la versión de reglas, catálogos y contrato usada; cada hallazgo normativo, su regla, su norma y su código de glosa.
+- Agente normativo: contexto, verificación de citas y borrador listos; falta el proveedor (§12.4). Prompt: `documentos/prompts/agente_normativo.md`.
+- Verificado contra la línea base (tag `linea-base-v0`): 149/149 facturas con el resultado previo idéntico; 6 hallazgos nuevos S00201.
+- Detalle, recetas de cambio y pendientes: `documentos/ARQUITECTURA_REGLAS.md`.
 
 Uso:
 

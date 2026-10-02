@@ -46,6 +46,13 @@ NOMBRE_HALLAZGO = {
     "duplicado": "Duplicado",
     "extraccion": "Lectura de documento",
     "ocr": "Autorización escaneada no legible",
+    "norma": "Regla normativa",
+}
+TIPO_RESULTADO = {
+    "rechazo_muv": "rechazo del Ministerio",
+    "notificacion": "notificación del Ministerio",
+    "validacion": "validación RIPS",
+    "glosa_potencial": "glosa potencial",
 }
 # (clave de fuente, encabezado de columna, dónde mirar)
 FUENTES = [
@@ -96,10 +103,16 @@ def discrepancias(r: ResultadoFactura) -> list[dict]:
             })
     for h in r.hallazgos:
         if h.resultado in ("aviso", "grave"):
+            if h.regla is not None:
+                glosa = f" {h.regla.codigo_glosa}" if h.regla.codigo_glosa else ""
+                tipo = f"Norma: {TIPO_RESULTADO[h.regla.tipo_resultado]}{glosa}"
+                campo = f"{h.regla.id} (v{h.regla.version})"
+            else:
+                tipo = campo = NOMBRE_HALLAZGO.get(h.tipo, h.tipo)
             filas.append({
                 "severidad": h.resultado,
-                "tipo": NOMBRE_HALLAZGO.get(h.tipo, h.tipo),
-                "campo": NOMBRE_HALLAZGO.get(h.tipo, h.tipo),
+                "tipo": tipo,
+                "campo": campo,
                 "valores": {},
                 "valor_final": None,
                 "sospechosos": [h.documento_sospechoso] if h.documento_sospechoso else [],

@@ -1,6 +1,6 @@
 [project]
 name = "validador"
-version = "0.1.0"
+version = "0.2.0"
 description = "Validador de consistencia de documentos de facturación en salud"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "pymupdf>=1.24",
     "openpyxl>=3.1",
     "sqlalchemy>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

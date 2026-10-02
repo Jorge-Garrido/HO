@@ -1,0 +1,17 @@
+codigo,descripcion,familia,detecta,fuente_tipica,automatizable,fuente
+FA0201,El cargo por consulta/interconsulta/visita presenta diferencias con las cantidades facturadas.,Facturación,Cantidad RIPS/soporte vs FEV.,RIPS + FEV + HC,Sí,Res. 2284/2023 Anexo 3
+FA0202,Se cobran consultas o visitas incluidas en honorarios postquirúrgicos.,Facturación,Duplicidad/inclusión contractual.,FEV + contrato,Parcial,Res. 2284/2023 Anexo 3
+FA0203,Se cobran consultas o visitas ya incluidas en una atención agrupada.,Facturación,Servicio ya incluido en paquete/agrupación.,FEV + contrato,Sí con contrato estructurado,Res. 2284/2023 Anexo 3
+FA0205,Se cobran consultas incluidas en honorarios profesionales del procedimiento.,Facturación,Inclusión contractual.,Contrato + FEV,Parcial,Res. 2284/2023 Anexo 3
+FA0206,Se registra interconsulta que originó un procedimiento quirúrgico/intervencionista realizado por el mismo prestador.,Facturación,Relación interconsulta-procedimiento.,RIPS + HC + FEV,Parcial,Res. 2284/2023 Anexo 3
+TA0201,El cargo por consulta/interconsulta/visita presenta diferencias con valores pactados o normativos.,Tarifas,Tarifa vs contrato/manual.,RIPS + FEV + tarifario,Sí,Res. 2284/2023 Anexo 3
+S00201,"Ausencia total, parcial o inconsistencia en soportes que evidencian la consulta.",Soportes,Falta de HC/resumen o contenido mínimo inconsistente.,HC/resumen,Sí/Parcial,Res. 2284/2023 Anexo 3
+S00202,Los soportes de la consulta no corresponden a la persona atendida.,Soportes,Documento/nombre paciente no coincide.,HC + RIPS,Sí,Res. 2284/2023 Anexo 3
+S06101,Uno o varios campos RIPS presentan inconsistencias con la atención prestada.,Soportes / calidad dato RIPS,Diferencias RIPS vs HC/soportes no monetarias.,RIPS + HC,Sí,Res. 2284/2023 Anexo 3
+S06102,Uno o varios campos RIPS presentan inconsistencias frente al contrato.,Soportes / calidad dato RIPS,Diferencias RIPS vs acuerdo.,RIPS + contrato,Sí,Res. 2284/2023 Anexo 3
+AU0201,Número de consultas facturadas presenta diferencia con las autorizadas.,Autorizaciones,Cantidad autorizada vs facturada.,Autorización + FEV/RIPS,Sí,Res. 2284/2023 Anexo 3
+AU0202,La consulta justificada en soportes no corresponde a la autorizada.,Autorizaciones,CUPS/servicio autorizado vs prestado/facturado.,Autorización + RIPS + HC,Sí,Res. 2284/2023 Anexo 3
+AU2103,El número de autorización registrado no corresponde al servicio/tecnología prestada o facturada.,Autorizaciones,Número de autorización vs servicio.,RIPS + autorización,Sí,Res. 2284/2023 Anexo 3
+AU4303,La orden/prescripción o autorización ha superado su vigencia.,Autorizaciones,Atención fuera de vigencia.,Autorización/OPF + fecha consulta,Sí,Res. 2284/2023 Anexo 3
+C00201,La consulta/interconsulta/visita no está incluida en la respectiva cobertura.,Cobertura,Tipo usuario/cobertura/CUPS.,RIPS + XML + contrato,Sí,Res. 2284/2023 Anexo 3
+CL0201,El cargo por consulta/interconsulta/visita no es pertinente.,Calidad,"Coherencia entre motivo, diagnóstico, HC y consulta.",RIPS + HC,Parcial/semántica,Res. 2284/2023 Anexo 3

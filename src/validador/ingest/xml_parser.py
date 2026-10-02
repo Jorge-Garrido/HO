@@ -129,6 +129,9 @@ def desde_raiz(raiz, doc: DocumentoExtraido, nota: DocumentoExtraido) -> list[Do
         valores = re.findall(r"[0-9A-Za-z\-]+", m.group(1))
         nota.poner("numero_autorizacion", ",".join(sorted({normalize.codigo(v) for v in valores})) or None, m.group(1))
 
+    doc.extra["periodo_inicio"] = _uno(invoice, "/*/cac:InvoicePeriod/cbc:StartDate/text()")
+    doc.extra["periodo_fin"] = _uno(invoice, "/*/cac:InvoicePeriod/cbc:EndDate/text()")
+
     # Extensión del sector salud (Name/Value).
     for info in invoice.xpath("//*[local-name()='AdditionalInformation']"):
         nombre = _uno(info, "*[local-name()='Name']/text()")

@@ -83,6 +83,10 @@ class DocumentoExtraido(BaseModel):
     paginas_sin_texto: list[int] = Field(default_factory=list)
     requiere_ocr: bool = False
     errores: list[str] = Field(default_factory=list)
+    # Contenido completo para el motor de reglas (RIPS tal cual, texto de la HC). Contiene datos
+    # del paciente: nunca se serializa ni se guarda (exclude=True).
+    datos: dict | None = Field(default=None, exclude=True)
+    texto: str | None = Field(default=None, exclude=True)
 
     def poner(self, campo: str, valor: str | None, crudo: str | None = None, pagina: int | None = None) -> None:
         if valor is None or valor == "":
@@ -128,13 +132,28 @@ class ResultadoLinea(BaseModel):
     documento_sospechoso: str | None = None
 
 
+class ReferenciaRegla(BaseModel):
+    """De qué regla normativa sale un hallazgo (solo los que produce el motor de reglas)."""
+
+    id: str
+    version: int
+    conjunto_version_id: int | None = None
+    tipo_resultado: Literal["rechazo_muv", "notificacion", "validacion", "glosa_potencial"]
+    codigo_glosa: str | None = None
+    norma: str
+    verificar: str | None = None
+    accion: str | None = None
+
+
 class Hallazgo(BaseModel):
-    """Verificación que no es un campo comparado (HC, documentos, códigos DIAN/CUV...)."""
+    """Verificación que no es un campo comparado entre fuentes: presencia de documentos, códigos
+    DIAN/CUV, historia clínica y reglas normativas (estas traen ``regla``)."""
 
     tipo: str
     resultado: Severidad
     motivo: str
     documento_sospechoso: str | None = None
+    regla: ReferenciaRegla | None = None
 
 
 class PropuestaCorreccion(BaseModel):
@@ -143,6 +162,22 @@ class PropuestaCorreccion(BaseModel):
     valor_actual: str | None
     valor_propuesto: str | None
     accion: str
+
+
+class ResumenReglas(BaseModel):
+    """Qué versión de reglas, catálogos y contrato se usó, y cómo terminó cada regla.
+
+    ``por_estado`` agrupa los ids de regla: cumple, falla, no_aplica (condición, alcance o
+    vigencia), no_evaluable (falta un dato, catálogo o contrato) y reportada_muv (el CUV ya la
+    reportó; no se duplica como glosa).
+    """
+
+    conjuntos: dict[str, int] = Field(default_factory=dict)
+    catalogos: dict[str, int] = Field(default_factory=dict)
+    contrato_version_id: int | None = None
+    fecha_referencia: date | None = None
+    por_estado: dict[str, list[str]] = Field(default_factory=dict)
+    no_evaluables: dict[str, str] = Field(default_factory=dict)
 
 
 class ResultadoFactura(BaseModel):
@@ -166,3 +201,4 @@ class ResultadoFactura(BaseModel):
     propuestas_correccion: list[PropuestaCorreccion] = Field(default_factory=list)
     tiempos_ms: dict[str, int]
     tarifario_version_id: int | None = None
+    reglas: ResumenReglas | None = None

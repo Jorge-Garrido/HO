@@ -1,4 +1,4 @@
-"""RIPS en JSON (Resolución 2275 de 2023): fuente principal de la factura.
+"""RIPS en JSON (Res. 948 de 2026, Documento Técnico 1; antes Res. 2275 de 2023): fuente principal.
 
 Ojo: ``numDocumentoIdentificacion`` dentro de cada servicio es el documento del
 profesional que atendió, no el del paciente. El del paciente está en ``usuarios[]``.
@@ -35,6 +35,7 @@ def extraer(ruta: Path) -> DocumentoExtraido:
 
 def desde_dict(datos: dict, doc: DocumentoExtraido | None = None) -> DocumentoExtraido:
     doc = doc or DocumentoExtraido(fuente="rips")
+    doc.datos = datos  # completo, para el motor de reglas (no se serializa)
     doc.poner("numero_factura", normalize.codigo(datos.get("numFactura")))
     doc.poner("nit_emisor", normalize.nit(str(datos.get("numDocumentoIdObligado") or "")))
     doc.extra["tipo_nota"] = datos.get("tipoNota")

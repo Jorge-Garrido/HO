@@ -24,7 +24,15 @@ def resumen(corrida_id: str, resultados: list[ResultadoFactura]) -> dict:
     codigos: Counter[str] = Counter()
     tarifa: Counter[str] = Counter()
     hallazgos: Counter[str] = Counter()
+    reglas_falla: Counter[str] = Counter()
+    glosas: Counter[str] = Counter()
+    reglas_no_evaluables: Counter[str] = Counter()
+    versiones_reglas: Counter[str] = Counter()
     for r in resultados:
+        if r.reglas:
+            versiones_reglas[",".join(f"{k}:{v}" for k, v in sorted(r.reglas.conjuntos.items())) or "archivo"] += 1
+            for regla_id in r.reglas.por_estado.get("no_evaluable", []):
+                reglas_no_evaluables[regla_id] += 1
         for c in r.campos:
             if c.resultado in ("aviso", "grave"):
                 campos_problema[f"{c.campo}:{c.resultado}"] += 1
@@ -44,6 +52,10 @@ def resumen(corrida_id: str, resultados: list[ResultadoFactura]) -> dict:
         for h in r.hallazgos:
             if h.resultado in ("aviso", "grave"):
                 hallazgos[f"{h.tipo}:{h.resultado}"] += 1
+            if h.regla is not None:
+                reglas_falla[h.regla.id] += 1
+                if h.regla.codigo_glosa:
+                    glosas[h.regla.codigo_glosa] += 1
     return {
         "corrida_id": corrida_id,
         "facturas": len(resultados),
@@ -54,6 +66,10 @@ def resumen(corrida_id: str, resultados: list[ResultadoFactura]) -> dict:
         "hallazgos_con_problema": dict(hallazgos.most_common()),
         "codigos_dian_cuv_por_factura": dict(codigos.most_common()),
         "tarifa_por_estado": dict(tarifa.most_common()),
+        "reglas_versiones": dict(versiones_reglas),
+        "reglas_con_falla": dict(reglas_falla.most_common()),
+        "glosas_potenciales": dict(glosas.most_common()),
+        "reglas_no_evaluables": dict(reglas_no_evaluables.most_common()),
         "requiere_ocr": dict(Counter(f for r in resultados for f in r.requiere_ocr)),
         "tiempo_promedio_ms": round(sum(r.tiempos_ms.get("total", 0) for r in resultados) / len(resultados)) if resultados else 0,
     }

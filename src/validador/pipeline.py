@@ -35,6 +35,7 @@ from .base.schemas import (
     ResultadoLinea,
 )
 from .severity import evaluar_campo, peor
+from .reglas.motor import MotorReglas
 from .store import db
 from .tarifario.matcher import Tarifario
 
@@ -362,6 +363,7 @@ def procesar_carpeta(
     cfg: Config,
     tarifario: Tarifario | None = None,
     engine: Engine | None = None,
+    motor: MotorReglas | None = None,
 ) -> ResultadoFactura:
     t0 = time.perf_counter()
     cf = discover.clasificar(ruta)
@@ -377,6 +379,10 @@ def procesar_carpeta(
     lineas = comparar_lineas(docs, principal, tarifario, cfg, periodo)
 
     hallazgos = _hallazgos_documentos(cf, docs, cfg) + _hallazgos_codigos(docs, cfg) + _hallazgos_hc(docs, lineas, periodo, cfg)
+    resumen_reglas = None
+    if motor is not None:
+        hallazgos_norma, resumen_reglas = motor.evaluar(docs, cf.presentes())
+        hallazgos += hallazgos_norma
 
     cufe = next((c.valor_final for c in campos if c.campo == "cufe"), None)
     estado = peor(*(c.resultado for c in campos), *(l.resultado for l in lineas), *(h.resultado for h in hallazgos))
@@ -410,6 +416,7 @@ def procesar_carpeta(
             "total": round((time.perf_counter() - t0) * 1000),
         },
         tarifario_version_id=tarifario.version_id if tarifario else None,
+        reglas=resumen_reglas,
     )
     resultado.propuestas_correccion = proponer(resultado)
     if engine is not None:

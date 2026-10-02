@@ -1,0 +1,392 @@
+# Conjunto de reglas normativas — semilla inicial.
+#
+# Este archivo es SOLO la entrada: se importa a la base de datos como una versión inmutable
+# del conjunto "normativa" (validador reglas importar referencia/reglas/normativa.yaml) y
+# en ejecución las reglas se leen de la base. Ver documentos/ARQUITECTURA_REGLAS.md.
+#
+# Fuente: documentos/SEMCOL_Consulta_Validaciones_Normativas.xlsx (hojas 01, 03, 06 y 07).
+# Las vigencias usan la fecha de expedición de cada norma según la hoja 08 del Excel.
+# PENDIENTE (jurídica): confirmar fechas de entrada en vigencia y periodos de transición.
+#
+# Rutas disponibles: `validador reglas rutas`. Primitivas: `validador reglas primitivas`.
+
+nombre: normativa
+descripcion: >-
+  Reglas de la Res. 948/2026 (RIPS + FEV) y de la Res. 2284/2023 (soportes, autorizaciones y
+  manual de glosas) para consulta ambulatoria y demás servicios del RIPS.
+
+reglas:
+
+  # ---------------------------------------------------------------- RIPS vs FEV (Res. 948/2026)
+
+  - id: RIPS-FECHA-PERIODO
+    nombre: Fecha de atención dentro del periodo facturado
+    matriz: [CONS-004]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C02", pagina: "28"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    primitiva: rango
+    params: {valor: servicio.fecha, desde: factura.periodo_inicio, hasta: factura.periodo_fin, tipo: fecha}
+    resultado:
+      tipo: rechazo_muv
+      severidad: grave
+      documento: rips
+      mensaje: La fecha de atención del RIPS está fuera del periodo de facturación del XML (InvoicePeriod).
+      verificar: "RIPS: fechaInicioAtencion / fechaDispensAdmon | XML: cac:InvoicePeriod"
+      accion: Corregir la fecha en el RIPS o el periodo de la factura (nota crédito y refacturación).
+
+  - id: RIPS-PRESTADOR-FEV
+    nombre: Código de prestador del RIPS corresponde al de la FEV
+    matriz: [CONS-003]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C01", pagina: "28"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    primitiva: comparar
+    # El RIPS lleva el código de habilitación con la sede (12 dígitos) y el XML el código del
+    # prestador (10): el del RIPS debe empezar por el del XML.
+    params: {a: servicio.codPrestador, op: empieza_por, b: factura.codigo_prestador}
+    resultado:
+      tipo: rechazo_muv
+      severidad: grave
+      documento: rips
+      mensaje: El código de prestador del servicio no corresponde al CODIGO_PRESTADOR de la factura electrónica.
+      verificar: "RIPS: codPrestador | XML: extensión sector salud CODIGO_PRESTADOR"
+      accion: Corregir el código de habilitación en el RIPS.
+
+  - id: RIPS-VALOR-EVENTO
+    nombre: Valor del servicio mayor que cero en pago por evento
+    matriz: [CONS-023, CONS-022]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C17", pagina: "41"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    cuando: {"==": [{var: factura.modalidad_pago}, "Pago por evento"]}
+    primitiva: comparar
+    params: {a: servicio.vrServicio, op: ">", valor: 0, tipo: numero}
+    resultado:
+      tipo: validacion
+      severidad: grave
+      documento: rips
+      mensaje: En modalidad de pago por evento el valor del servicio debe ser mayor que cero.
+      verificar: "RIPS: vrServicio | XML: MODALIDAD_PAGO"
+
+  - id: RIPS-MODERADOR-DOCUMENTO
+    nombre: Pago moderador con su documento soporte
+    matriz: [CONS-026]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C19-C20", pagina: "42"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    cuando: {">": [{var: servicio.valorPagoModerador}, 0]}
+    primitiva: requerido
+    params: {campos: [servicio.numFEVPagoModerador]}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: El servicio registra pago moderador pero no informa la FEV o documento que lo soporta.
+      verificar: "RIPS: valorPagoModerador y numFEVPagoModerador"
+
+  - id: RIPS-MODERADOR-NULO
+    nombre: Sin pago moderador, el documento del recaudo va vacío
+    matriz: [CONS-026]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C20", pagina: "42"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    cuando: {"==": [{var: servicio.valorPagoModerador}, 0]}
+    primitiva: nulo
+    params: {campos: [servicio.numFEVPagoModerador]}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: El servicio no tiene pago moderador pero informa un documento de recaudo.
+      verificar: "RIPS: valorPagoModerador y numFEVPagoModerador"
+
+  # ---------------------------------------------------------------- RIPS: usuario y servicio
+
+  - id: RIPS-NACIMIENTO-ATENCION
+    nombre: Fecha de nacimiento no posterior a la atención
+    matriz: [CONS-006]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.2 U04", pagina: "22"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos, urgencias, hospitalizacion, medicamentos, otrosServicios]
+    primitiva: comparar
+    params: {a: usuario.fechaNacimiento, op: "<=", b: servicio.fecha, tipo: fecha}
+    resultado:
+      tipo: validacion
+      severidad: grave
+      documento: rips
+      mensaje: La fecha de nacimiento del usuario es posterior a la fecha de atención.
+      verificar: "RIPS: usuarios[].fechaNacimiento y fecha del servicio"
+
+  - id: RIPS-ZONA-RESIDENCIA
+    nombre: Zona territorial obligatoria si reside en Colombia
+    matriz: []
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.2 U08", pagina: "24"}
+    vigencia: {desde: 2026-05-14}
+    alcance: factura
+    cuando: {"==": [{var: usuario.codPaisResidencia}, "170"]}
+    primitiva: requerido
+    params: {campos: [usuario.codZonaTerritorialResidencia]}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: El usuario reside en Colombia y no tiene zona territorial de residencia.
+      verificar: "RIPS: usuarios[].codZonaTerritorialResidencia"
+
+  - id: RIPS-CONSECUTIVO-USUARIOS
+    nombre: Consecutivo de usuarios
+    matriz: []
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.2 U10", pagina: "25"}
+    vigencia: {desde: 2026-05-14}
+    alcance: factura
+    primitiva: consecutivo
+    params: {lista: rips.usuarios}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: El consecutivo de los usuarios del RIPS no inicia en 1 o no aumenta de uno en uno.
+
+  - id: RIPS-CONSECUTIVO-CONSULTAS
+    nombre: Consecutivo de consultas
+    matriz: []
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C21", pagina: "42"}
+    vigencia: {desde: 2026-05-14}
+    alcance: factura
+    cuando: {presente: rips.servicios.consultas}
+    primitiva: consecutivo
+    params: {lista: rips.servicios.consultas}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: El consecutivo de las consultas del RIPS no inicia en 1 o no aumenta de uno en uno.
+
+  - id: RIPS-DX-NO-REPETIDOS
+    nombre: Diagnósticos relacionados distintos del principal
+    matriz: []
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C11-C13", pagina: "37"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas]
+    primitiva: distintos
+    params:
+      campos: [servicio.codDiagnosticoPrincipal, servicio.codDiagnosticoRelacionado1, servicio.codDiagnosticoRelacionado2, servicio.codDiagnosticoRelacionado3]
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: Un diagnóstico relacionado repite el principal u otro relacionado.
+
+  # ---------------------------------------------------------------- Catálogos (no evaluables hasta cargarlos)
+
+  - id: CUPS-EN-CATALOGO
+    nombre: CUPS existe en CUPSRips
+    matriz: [CONS-010]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "RVC096", pagina: "15"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos]
+    primitiva: en_catalogo
+    params: {campo: servicio.codigo, catalogo: CUPSRIPS}
+    resultado:
+      tipo: rechazo_muv
+      severidad: grave
+      cuv_equivalente: [RVC096]
+      documento: rips
+      mensaje: El código CUPS no existe en la tabla CUPSRips vigente.
+
+  - id: CUPS-SEXO
+    nombre: CUPS coherente con el sexo del usuario
+    matriz: [CONS-007]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C04", pagina: "29"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos]
+    primitiva: relacion_catalogo
+    params:
+      catalogo: CUPSRIPS
+      codigo: servicio.codigo
+      restricciones:
+        - {atributo: sexo, op: "==", valor: usuario.codSexo, comodines: [A, Z]}
+    resultado:
+      tipo: notificacion
+      severidad: aviso
+      documento: rips
+      mensaje: El CUPS no corresponde al sexo del usuario según CUPSRips.
+
+  - id: CIE10-EN-CATALOGO
+    nombre: Diagnóstico principal existe en CIE-10
+    matriz: [CONS-017]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C10", pagina: "36"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos, medicamentos]
+    primitiva: en_catalogo
+    params: {campo: servicio.codDiagnosticoPrincipal, catalogo: CIE10}
+    resultado:
+      tipo: validacion
+      severidad: grave
+      codigo_glosa: S06101
+      documento: rips
+      mensaje: El diagnóstico principal no existe en la tabla CIE-10 vigente.
+
+  - id: CIE10-SEXO-EDAD
+    nombre: Diagnóstico coherente con sexo y edad
+    matriz: [CONS-018]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "RVC028", pagina: "123"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos]
+    primitiva: relacion_catalogo
+    params:
+      catalogo: CIE10
+      codigo: servicio.codDiagnosticoPrincipal
+      restricciones:
+        - {atributo: sexo, op: "==", valor: usuario.codSexo, comodines: [A, Z]}
+        - {atributo: edad_minima, op: "<=", valor: derivado.edad_anios, tipo: numero}
+        - {atributo: edad_maxima, op: ">=", valor: derivado.edad_anios, tipo: numero}
+    resultado:
+      tipo: notificacion
+      severidad: aviso
+      cuv_equivalente: [RVC028]
+      documento: rips
+      mensaje: El diagnóstico principal no es coherente con el sexo o la edad del usuario.
+
+  - id: FINALIDAD-EN-CATALOGO
+    nombre: Finalidad de la consulta en tabla
+    matriz: [CONS-015]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C08", pagina: "33"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas]
+    primitiva: en_catalogo
+    params: {campo: servicio.finalidadTecnologiaSalud, catalogo: RIPSFINALIDADCONSULTAVERSION2}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: La finalidad de la consulta no existe en la tabla RIPSFinalidadConsultaVersion2.
+
+  - id: CAUSA-EN-CATALOGO
+    nombre: Causa de la atención en tabla
+    matriz: [CONS-016]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C09", pagina: "34"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    tipos_servicio: [consultas]
+    primitiva: en_catalogo
+    params: {campo: servicio.causaMotivoAtencion, catalogo: RIPSCAUSAEXTERNAVERSION2}
+    resultado:
+      tipo: validacion
+      severidad: aviso
+      documento: rips
+      mensaje: La causa de la atención no existe en la tabla RIPSCausaExternaVersion2.
+
+  - id: TIPO-USUARIO-COBERTURA
+    nombre: Tipo de usuario coherente con la cobertura de la FEV
+    matriz: [CONS-008]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "RVC005", pagina: "123"}
+    vigencia: {desde: 2026-05-14}
+    alcance: factura
+    primitiva: relacion_catalogo
+    # Tabla de relación que mantiene facturación: código = tipoUsuario, columna "coberturas"
+    # con las coberturas permitidas separadas por coma.
+    params:
+      catalogo: TIPO_USUARIO_COBERTURA
+      codigo: usuario.tipoUsuario
+      restricciones:
+        - {atributo: coberturas, op: contiene, valor: factura.cobertura_plan_beneficios}
+    resultado:
+      tipo: rechazo_muv
+      severidad: grave
+      codigo_glosa: C00201
+      cuv_equivalente: [RVC005]
+      documento: rips
+      mensaje: El tipo de usuario del RIPS no corresponde a la cobertura o plan de beneficios de la factura.
+
+  # ---------------------------------------------------------------- Soportes (Res. 2284/2023)
+
+  - id: SOPORTE-HC-CONSULTA
+    nombre: Consulta con historia clínica o resumen de atención
+    matriz: [CONS-027]
+    norma: {documento: "Res. 2284/2023 Anexo Técnico 1", numeral: "soportes consulta ambulatoria", pagina: "14"}
+    vigencia: {desde: 2023-12-28}
+    alcance: factura
+    cuando: {in: [consultas, {var: factura.tipos_servicio}]}
+    primitiva: documento_presente
+    params: {tipos: [HEV, EPI]}
+    resultado:
+      tipo: glosa_potencial
+      severidad: aviso
+      codigo_glosa: S00201
+      documento: hc
+      mensaje: Se factura consulta y la carpeta no trae historia clínica (HEV) ni epicrisis (EPI).
+      accion: Adjuntar el registro de la atención antes de radicar.
+
+  - id: HC-CONTENIDO-MINIMO
+    nombre: Contenido mínimo del resumen de atención
+    matriz: [CONS-027, CONS-033]
+    norma: {documento: "Res. 2284/2023 Anexo Técnico 1", numeral: "2.1.7-2.1.12", pagina: "8"}
+    vigencia: {desde: 2023-12-28}
+    alcance: factura
+    cuando: {in: [consultas, {var: factura.tipos_servicio}]}
+    primitiva: secciones_presentes
+    params:
+      texto: hc.texto
+      secciones:
+        anamnesis: [ANAMNESIS, ENFERMEDAD ACTUAL, MOTIVO DE CONSULTA]
+        revision_por_sistemas: [REVISION POR SISTEMAS]
+        antecedentes: [ANTECEDENTES, "PATOLOGICOS:"]
+        examen_fisico: [EXAMEN FISICO]
+        analisis: [ANALISIS]
+        diagnostico: [DIAGNOSTICO, IMPRESION DIAGNOSTICA]
+        plan_de_cuidado: [PLAN DE MANEJO, "PLAN:", CONDUCTA, ORDENES MEDICAS]
+    resultado:
+      tipo: glosa_potencial
+      severidad: aviso
+      codigo_glosa: S00201
+      documento: hc
+      mensaje: La historia clínica de la consulta no muestra todas las secciones del contenido mínimo (anamnesis, examen físico, análisis, diagnóstico, plan).
+      verificar: "HEV: buscar las secciones indicadas; puede que la carpeta traiga otra nota (consentimiento, procedimiento) y no la de la consulta"
+      accion: Adjuntar la nota de la consulta facturada o completar el registro en el sistema clínico.
+
+  # ---------------------------------------------------------------- Contrato (no evaluables hasta cargar el contrato)
+
+  - id: AUTORIZACION-REQUERIDA
+    nombre: Número de autorización cuando el contrato la exige
+    matriz: [CONS-009]
+    norma: {documento: "Res. 948/2026 DT1", numeral: "§4.3.1 C03", pagina: "28"}
+    vigencia: {desde: 2026-05-14}
+    alcance: servicio
+    cuando: {"==": [{var: derivado.requiere_autorizacion}, true]}
+    primitiva: requerido
+    params: {campos: [servicio.numAutorizacion]}
+    resultado:
+      tipo: glosa_potencial
+      severidad: grave
+      documento: rips
+      mensaje: El contrato exige autorización para este servicio y el RIPS no trae número de autorización (familia de glosas AU21).
+      accion: Registrar el número de autorización (o el de la solicitud, si la autorización fue tácita).
+
+  - id: ORDEN-SIN-AUTORIZACION
+    nombre: Orden médica cuando el contrato no exige autorización
+    matriz: [CONS-029]
+    norma: {documento: "Res. 2284/2023 Anexo Técnico 1", numeral: "orden o prescripción facultativa", pagina: "12"}
+    vigencia: {desde: 2023-12-28}
+    alcance: servicio
+    tipos_servicio: [consultas, procedimientos]
+    cuando:
+      and:
+        - {"==": [{var: derivado.requiere_autorizacion}, false]}
+        - {"==": [{var: contrato.orden_medica.requerida_sin_autorizacion}, true]}
+    primitiva: documento_presente
+    params: {tipos: [OPF]}
+    resultado:
+      tipo: glosa_potencial
+      severidad: aviso
+      codigo_glosa: S00201
+      documento: carpeta
+      mensaje: El contrato no exige autorización para este servicio, así que la orden o prescripción (OPF) es el soporte, y no está en la carpeta.

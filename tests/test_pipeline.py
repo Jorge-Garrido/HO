@@ -124,7 +124,7 @@ def test_duplicado_por_cufe(tmp_path, cfg):
 def test_resultado_serializa_a_json(tmp_path, cfg):
     r = procesar_carpeta(carpeta(tmp_path, Caso()), "c1", cfg)
     datos = r.model_dump(mode="json")
-    assert datos["schema_version"] == "1" and datos["estado"] in ("ok", "info", "aviso", "grave")
+    assert datos["schema_version"] == "2" and datos["estado"] in ("ok", "info", "aviso", "grave")
 
 
 def test_pdf_unificado_se_separa_por_paginas(tmp_path):

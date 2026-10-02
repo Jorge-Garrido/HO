@@ -2,6 +2,7 @@
 
     validador tarifario importar documentos/base_cups.xlsx --uvb-anio 2025
     validador procesar "nuevaeps/NUEVA EPS EXITOSA" --salida salidas
+    validador reglas|catalogo|contrato ...   (ver cli_referencia.py)
 """
 
 from __future__ import annotations
@@ -22,8 +23,11 @@ from pathlib import Path
 from .. import __version__, pipeline, report, salida_errores
 from ..base.config import get_config
 from ..ingest import discover
-from ..store import db
+from ..reglas import importador as importador_reglas
+from ..reglas.motor import ConjuntoCargado, MotorReglas
+from ..store import db, referencia
 from ..tarifario import importer
+from . import cli_referencia
 
 
 def _importar_tarifario(args: argparse.Namespace) -> int:
@@ -44,24 +48,24 @@ def _importar_tarifario(args: argparse.Namespace) -> int:
     return 0
 
 
-def _trabajo(carpeta, corrida_id, cfg, tarifario):
+def _trabajo(carpeta, corrida_id, cfg, tarifario, motor):
     try:
-        return pipeline.procesar_carpeta(carpeta, corrida_id, cfg, tarifario, None)
+        return pipeline.procesar_carpeta(carpeta, corrida_id, cfg, tarifario, None, motor)
     except Exception as e:  # una factura rota no detiene la corrida
         logging.getLogger(__name__).error("factura %s: error %s", carpeta.name, type(e).__name__)
         return None
 
 
-def _procesar_todas(carpetas, corrida_id, cfg, tarifario, workers: int):
+def _procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, workers: int):
     """Procesa en paralelo por procesos (el OCR usa CPU). Cada proceso limita sus hilos."""
     if workers <= 1:
         for c in carpetas:
-            if (r := _trabajo(c, corrida_id, cfg, tarifario)) is not None:
+            if (r := _trabajo(c, corrida_id, cfg, tarifario, motor)) is not None:
                 yield r
         return
     os.environ["VALIDADOR_OCR_HILOS"] = str(max(1, (os.cpu_count() or 2) // workers))
     with ProcessPoolExecutor(max_workers=workers) as ex:
-        futuros = [ex.submit(_trabajo, c, corrida_id, cfg, tarifario) for c in carpetas]
+        futuros = [ex.submit(_trabajo, c, corrida_id, cfg, tarifario, motor) for c in carpetas]
         for f in as_completed(futuros):
             if (r := f.result()) is not None:
                 yield r
@@ -75,6 +79,7 @@ def _procesar(args: argparse.Namespace) -> int:
     tarifario = db.cargar_tarifario(engine, args.tarifario) if engine is not None else None
     if tarifario is None:
         print("AVISO  sin tarifario cargado: no se validan tarifas (use 'validador tarifario importar').")
+    motor = _motor(args, cfg, engine)
 
     corrida_id = f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}-{secrets.token_hex(2)}"
     salida = Path(args.salida) / corrida_id.replace(":", "")
@@ -86,7 +91,7 @@ def _procesar(args: argparse.Namespace) -> int:
         carpetas = carpetas[: args.limite]
     resultados = []
     t0 = time.perf_counter()
-    for i, r in enumerate(_procesar_todas(carpetas, corrida_id, cfg, tarifario, args.workers), 1):
+    for i, r in enumerate(_procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, args.workers), 1):
         if engine is not None:
             pipeline.marcar_duplicados(r, engine)
             db.guardar_resultado(engine, r)
@@ -115,6 +120,24 @@ def _procesar(args: argparse.Namespace) -> int:
     print(f"Reporte Excel:      {reporte}")
     print(f"Detalle técnico:    {salida}")
     return 0
+
+
+def _motor(args: argparse.Namespace, cfg, engine) -> MotorReglas | None:
+    """Reglas normativas: las vigentes en la base, las versiones indicadas con --reglas
+    (para probar una versión no vigente) o un archivo con --reglas-archivo (sin base)."""
+    if args.sin_reglas or not cfg.reglas_habilitadas:
+        return None
+    if args.reglas_archivo:
+        conjunto, _ = importador_reglas.leer(Path(args.reglas_archivo))
+        print(f"AVISO  reglas desde archivo ({args.reglas_archivo}): sin catálogos ni contratos, resultados sin versión de reglas")
+        return MotorReglas([ConjuntoCargado(conjunto, None)])
+    motor = referencia.cargar_motor(engine, args.reglas) if engine is not None else None
+    if motor is None:
+        print("AVISO  sin reglas normativas vigentes (use 'validador reglas importar' y 'validador reglas activar').")
+    else:
+        nombres = ", ".join(f"{c.conjunto.nombre} (id {c.version_id})" for c in motor.conjuntos)
+        print(f"Reglas normativas: {nombres}; catálogos: {', '.join(motor.catalogos.nombres) or 'ninguno'}; contratos: {len(motor.contratos)}")
+    return motor
 
 
 def _imprimir_discrepancias(resultados) -> None:
@@ -155,7 +178,12 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 4), help="procesos en paralelo")
     pr.add_argument("--sin-ocr", action="store_true", help="no lee las autorizaciones escaneadas")
     pr.add_argument("--errores", default="CON ERROR", help="carpeta donde se copian las facturas con discrepancias (una subcarpeta por EPS)")
+    pr.add_argument("--reglas", type=int, action="append", help="id de versión de reglas a usar en vez de la vigente (repetible)")
+    pr.add_argument("--reglas-archivo", help="conjunto de reglas YAML/JSON sin pasar por la base (pruebas)")
+    pr.add_argument("--sin-reglas", action="store_true", help="no aplica las reglas normativas")
     pr.set_defaults(func=_procesar)
+
+    cli_referencia.registrar(sub)
 
     args = p.parse_args(argv)
     return args.func(args)

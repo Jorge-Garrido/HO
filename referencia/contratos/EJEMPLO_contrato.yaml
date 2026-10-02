@@ -1,0 +1,35 @@
+# EJEMPLO — no es un contrato real. Usa un NIT ficticio para que no aplique a ninguna factura.
+# Copiar, llenar con los términos del contrato firmado con la EPS y cargar con:
+#   validador contrato importar referencia/contratos/<EPS>_<numero>.yaml --usuario <quien>
+#
+# Las reglas son las mismas para todas las EPS: lo que cambia entre contratos son estos
+# parámetros. Ver documentos/ARQUITECTURA_REGLAS.md, sección "Contratos".
+
+eps_nit: "900000002"            # NIT de la EPS, sin dígito de verificación
+eps_nombre: EPS DE EJEMPLO
+numero_contrato: null           # si se indica, solo aplica a facturas con ese NUMERO_CONTRATO en el XML
+vigencia: {desde: 2026-01-01, hasta: 2026-12-31}
+modalidad_pago: Pago por evento
+
+autorizacion:
+  requiere: todos               # todos | ninguno | lista
+  cups_excentos: ["890201", "890301"]        # consulta de medicina general primera vez / control
+  tipos_servicio_excentos: [urgencias]
+  vigencia_dias: 90
+
+orden_medica:
+  requerida_sin_autorizacion: true
+  vigencia_dias: 30
+
+tarifa:
+  metodo: tarifario_institucional   # tarifario_institucional | soat | iss2001 | propio
+  tarifario_version_id: null
+  ajuste_pct: 0
+
+soportes_requeridos:
+  consultas: [FEV, HEV]
+  procedimientos: [FEV, HEV, PDE]
+
+parametros: {}                  # valores libres para reglas: contrato.parametros.<nombre>
+plugins: []                     # reglas específicas de esta EPS (código registrado), si las hay
+notas: Ejemplo de estructura.

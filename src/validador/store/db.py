@@ -99,7 +99,10 @@ def ahora() -> datetime:
 def conectar(url: str) -> Engine:
     if url.startswith("sqlite:///"):
         Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
+    from . import referencia  # noqa: F401  registra las tablas de reglas, catálogos y contratos
+
     engine = create_engine(url, future=True)
+    # Crea las tablas que falten; no altera las existentes (ver ARQUITECTURA_REGLAS.md, "Migraciones").
     metadata.create_all(engine)
     return engine
 
