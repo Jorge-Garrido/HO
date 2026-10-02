@@ -203,13 +203,21 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
     if campo not in CAMPOS_CASCADA or not tesseract.disponible():
         return Resolucion(campo, esperado, "no_legible", None, None, 0.0, {"paddle": v.valor_encontrado or ""}, v.estado)
 
+    # Votos por valor y por *motor*: PP-OCR (página y recorte) y Tesseract (línea y dígitos). Dos
+    # lecturas del mismo motor no son independientes: confunden la misma forma (6/8, 0/Q).
     votos: Counter[str] = Counter()
+    motores: dict[str, set[str]] = {}
+
+    def votar(valor: str, motor: str) -> None:
+        votos[valor] += 1
+        motores.setdefault(valor, set()).add(motor)
+
     lecturas: dict[str, str] = {}
     digitos: tuple[int, str] | None = None
     if v.valor_encontrado:
         cerca = _mas_cercana(v.valor_encontrado, e)
         if cerca:
-            votos[cerca[0]] += 1
+            votar(cerca[0], "ppocr")
         lecturas["paddle"] = v.valor_encontrado
 
     for pagina, caja, texto_linea in _lineas(doc, campo, v):
@@ -231,9 +239,9 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
         if _coincide(t_txt, e):
             return Resolucion(campo, esperado, "confirmado", "tesseract", e, 0.9, {**lecturas, "tesseract": t_txt})
 
-        for fuente, txt in (("paddle_recorte", p_txt), ("tesseract", t_txt)):
+        for motor, txt in (("ppocr", p_txt), ("tesseract", t_txt)):
             if (c := _mas_cercana(txt, e)) and c[3] <= 2:
-                votos[c[0]] += 1
+                votar(c[0], motor)
 
         # 2c. Solo la parte numérica, restringida a dígitos
         mejor = None
@@ -253,7 +261,7 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
         if dig.texto == e:
             return Resolucion(campo, esperado, "confirmado", "tesseract", e, 0.9, {**lecturas, "tesseract_digitos": dig.texto})
         if dig.texto and abs(len(dig.texto) - len(e)) <= 1:
-            votos[dig.texto] += 1
+            votar(dig.texto, "tesseract")
 
         # 3. Dígito a dígito (se decide al final): cada posición distinta debe ser dudosa para el
         # OCR (confianza baja) y tener el dígito esperado entre sus alternativas.
@@ -265,9 +273,9 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
     # ¿Dos lecturas independientes coinciden en otro valor? Eso pesa más que un dígito dudoso.
     if votos:
         valor, n = votos.most_common(1)[0]
-        if n >= 2 and valor != e:
+        if len(motores[valor]) >= 2 and valor != e:
             return Resolucion(campo, esperado, "diferencia", "tesseract", valor, 0.9, lecturas,
-                              f"{n} lecturas independientes leen {valor}")
+                              f"dos motores distintos leen {valor}")
     if digitos:
         return Resolucion(campo, esperado, "confirmado", "digitos", e, 0.7, lecturas,
                           f"{digitos[0]} dígito(s) dudosos; el esperado está entre las alternativas del OCR")

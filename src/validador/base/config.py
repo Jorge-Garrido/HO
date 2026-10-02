@@ -134,8 +134,11 @@ class Config(BaseModel):
     lineas_si_codigo_falta: Severidad = "grave"
     lineas_si_valor_difiere: Severidad = "grave"
     lineas_si_cantidad_difiere: Severidad = "aviso"
-    # Misma línea (mismo valor) con código distinto entre fuentes, p. ej. código interno recortado.
+    # Misma línea (mismo valor) con códigos de sistemas distintos: interno en la FEV, CUM en el RIPS.
     lineas_si_codigo_difiere: Severidad = "aviso"
+    # Misma línea, pero el código del RIPS es el de la factura recortado (P890207-1 -> P89020):
+    # el RIPS no reporta el código facturado.
+    lineas_si_codigo_recortado: Severidad = "grave"
     lineas_si_fecha_fuera_periodo: Severidad = "aviso"
 
     hc_si_tipo_consulta_difiere: Severidad = "aviso"

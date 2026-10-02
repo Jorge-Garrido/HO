@@ -148,6 +148,7 @@ def _emparejar_codigos(
     agrupado: dict[str, dict[str, tuple[Decimal, Decimal]]],
     principal: str,
     descripciones: dict[str, dict[str, str]] | None = None,
+    criterios: dict[str, str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Une códigos que son la misma línea con distinto código en cada fuente.
 
@@ -157,9 +158,13 @@ def _emparejar_codigos(
     emparejan si tienen el mismo valor y además: uno es prefijo del otro (sin signos, al menos
     5 caracteres), sus descripciones se parecen (SIMILITUD_DESCRIPCION) o su valor y cantidad
     son únicos entre las líneas sin pareja. Modifica
-    ``agrupado`` y devuelve {código final: {fuente: código original}} de los emparejados.
+    ``agrupado`` y devuelve {código final: {fuente: código original}} de los emparejados. En
+    ``criterios`` deja por qué se emparejó cada uno: "recortado" (un código es prefijo del otro:
+    el RIPS reporta un código distinto al facturado) o "otro_sistema" (códigos de sistemas
+    distintos para el mismo ítem, p. ej. interno en la FEV y CUM en el RIPS).
     """
     descripciones = descripciones or {}
+    criterios = criterios if criterios is not None else {}
     fuentes = list(agrupado)
     presentes = {c: {f for f in fuentes if c in agrupado[f]} for c in {c for g in agrupado.values() for c in g}}
     incompletos = sorted(c for c, fs in presentes.items() if len(fs) < len(fuentes))
@@ -168,23 +173,24 @@ def _emparejar_codigos(
     def descripcion(c: str) -> str | None:
         return next((descripciones.get(f, {}).get(c) for f in presentes[c] if descripciones.get(f, {}).get(c)), None)
 
-    def afinidad(a: str, b: str) -> float:
+    def afinidad(a: str, b: str) -> tuple[float, str]:
+        """(puntaje, criterio). El prefijo gana a la descripción; puntaje 0 = no emparejar."""
         if presentes[a] & presentes[b]:
-            return 0.0
+            return 0.0, ""
         valores = {agrupado[f][a][1] for f in presentes[a]} | {agrupado[f][b][1] for f in presentes[b]}
         if len(valores) != 1:
-            return 0.0
+            return 0.0, ""
         corto, largo = sorted((_alfanumerico(a), _alfanumerico(b)), key=len)
         if len(corto) >= 5 and largo.startswith(corto):
-            return 1.0
+            return 2.0, "recortado"
         sim = similitud_tokens(descripcion(a), descripcion(b))
         if sim >= SIMILITUD_DESCRIPCION:
-            return sim
+            return sim, "otro_sistema"
         # Valor y cantidad iguales y únicos entre las líneas sin pareja: la descripción puede venir
         # dañada (codificación) o abreviada. Si el valor se repite, es ambiguo y no se empareja.
         if unico(a, b) and unico(b, a):
-            return SIMILITUD_DESCRIPCION / 2
-        return 0.0
+            return SIMILITUD_DESCRIPCION / 2, "otro_sistema"
+        return 0.0, ""
 
     def unico(a: str, b: str) -> bool:
         """b es la única línea sin pareja, fuera de las fuentes de a, con su mismo valor y cantidad."""
@@ -199,12 +205,13 @@ def _emparejar_codigos(
     for a in incompletos:
         if a in usados:
             continue
-        candidatos = [(afinidad(a, b), b) for b in incompletos if b != a and b not in usados]
-        puntaje, b = max(candidatos, default=(0.0, None))
+        candidatos = [(*afinidad(a, b), b) for b in incompletos if b != a and b not in usados]
+        puntaje, criterio, b = max(candidatos, default=(0.0, "", None), key=lambda x: x[0])
         if not puntaje or b is None:
             continue
         final = a if principal in presentes[a] else b
         otro = b if final == a else a
+        criterios[final] = criterio
         for f in presentes[otro]:
             agrupado[f][final] = agrupado[f].pop(otro)
         emparejados[final] = {**{f: a for f in presentes[a]}, **{f: b for f in presentes[b]}}
@@ -223,7 +230,8 @@ def comparar_lineas(
     fuentes = [f for f in FUENTES_LINEAS if f in docs and docs[f].lineas]
     agrupado = {f: _agrupar(docs[f].lineas) for f in fuentes}
     desc_por_fuente = {f: {l.codigo: l.descripcion for l in docs[f].lineas if l.codigo and l.descripcion} for f in fuentes}
-    emparejados = _emparejar_codigos(agrupado, principal, desc_por_fuente)
+    criterios: dict[str, str] = {}
+    emparejados = _emparejar_codigos(agrupado, principal, desc_por_fuente, criterios)
     alias = {orig: final for final, por_fuente in emparejados.items() for orig in por_fuente.values()}
     descripciones: dict[str, str] = {}
     tipos: dict[str, str] = {}
@@ -245,9 +253,15 @@ def comparar_lineas(
         sospechoso: str | None = None
 
         if codigo in emparejados:
-            resultado = peor(resultado, cfg.lineas_si_codigo_difiere)
             detalle = ", ".join(f"{f}={c}" for f, c in emparejados[codigo].items())
-            motivos.append(f"el código del servicio es distinto entre fuentes ({detalle}); mismo valor")
+            if criterios[codigo] == "recortado":
+                # Mismo ítem, pero el RIPS no reporta el código facturado (Res. 948: RIPS y FEV deben
+                # coincidir en el servicio; el código del RIPS debe ser válido en su tabla).
+                resultado = peor(resultado, cfg.lineas_si_codigo_recortado)
+                motivos.append(f"el RIPS reporta un código distinto al de la factura ({detalle}); mismo valor")
+            else:
+                resultado = peor(resultado, cfg.lineas_si_codigo_difiere)
+                motivos.append(f"el ítem usa códigos de sistemas distintos entre fuentes ({detalle}); mismo valor y descripción o valor único")
         faltan = [f for f in fuentes if f not in valores]
         if faltan:
             voto = votar({f: ("si" if f in valores else "no") for f in fuentes}, "exacta")

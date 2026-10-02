@@ -103,11 +103,11 @@ def test_codigo_interno_recortado_se_empareja_con_aviso():
     assert _emparejar_codigos(otro, "rips") == {}
 
 
-def test_lineas_emparejadas_son_aviso_y_no_grave():
+def test_codigo_recortado_es_una_sola_linea_grave():
     rips = DocumentoExtraido(fuente="rips", lineas=[LineaServicio(codigo="P89020", origen_codigo="rips", valor_total=Decimal(150000), fuente="rips")])
     xml = DocumentoExtraido(fuente="xml", lineas=[LineaServicio(codigo="P890207-1", origen_codigo="xml", valor_total=Decimal(150000), fuente="xml")])
     (linea,) = comparar_lineas({"rips": rips, "xml": xml}, "rips", None, Config(), (None, None))
-    assert linea.resultado == "aviso" and "distinto entre fuentes" in linea.motivos[0]
+    assert linea.resultado == "grave" and "código distinto al de la factura" in linea.motivos[0]
 
 
 def _palabras(texto: str) -> list[Palabra]:
@@ -195,3 +195,19 @@ def test_escaneo_recortado_o_parcial_no_es_grave():
     r = campo("15825694", "15825694,15836151", "15825694,15836151")
     assert r.resultado == "aviso" and r.documento_sospechoso == "autorizacion_scan"
     assert campo("27196996", "17196996", "17196996").resultado == "grave"  # dígito distinto: sí es grave
+
+
+def test_descripcion_identica_no_se_confunde_con_codigo_recortado():
+    criterios: dict[str, str] = {}
+    agrupado = {"rips": {"19934768-22": (Decimal(1), Decimal(5000))}, "xml": {"00100025": (Decimal(1), Decimal(5000))}}
+    desc = {"rips": {"19934768-22": "DICLOFENACO AMPOLLA X 75 MG"}, "xml": {"00100025": "DICLOFENACO AMPOLLA X 75 MG"}}
+    _emparejar_codigos(agrupado, "rips", desc, criterios)
+    assert criterios == {"19934768-22": "otro_sistema"}
+
+
+def test_rips_con_varias_autorizaciones_en_un_servicio():
+    from fabrica import rips_dict
+    from validador.ingest import rips
+
+    datos = rips_dict(Caso(autorizacion="20076906,20076944"))
+    assert rips.desde_dict(datos).campos["numero_autorizacion"].valor == "20076906,20076944"

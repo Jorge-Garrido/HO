@@ -7,6 +7,7 @@ profesional que atendió, no el del paciente. El del paciente está en ``usuario
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -69,7 +70,8 @@ def desde_dict(datos: dict, doc: DocumentoExtraido | None = None) -> DocumentoEx
                 moderador += normalize.dinero(s.get("valorPagoModerador")) or Decimal(0)
                 aut = normalize.codigo(s.get("numAutorizacion"))
                 if aut:
-                    autorizaciones.add(aut)
+                    # Algunos prestadores ponen varias autorizaciones en un servicio: '123,456'.
+                    autorizaciones.update(a for a in re.split(r"[,;/\s]+", aut) if a)
                 cantidad = normalize.dinero(s.get(campo_cantidad)) if campo_cantidad else None
                 doc.lineas.append(
                     LineaServicio(
