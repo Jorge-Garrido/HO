@@ -322,4 +322,5 @@ VALIDADOR_DB_URL=postgresql+psycopg://usuario@host/validador validador procesar 
 - Prueba con COOSALUD y FAMISANAR (5.812 facturas de otra IPS, disco externo): descubrimiento en cualquier estructura de carpetas y zips, emparejamiento de códigos entre fuentes, lectura de nombres sin confundir prosa con etiquetas, OCR por motores independientes. Sin código específico por EPS; la regresión contra la línea base se mantuvo idéntica.
 - Hallazgo real sistemático: el RIPS de esa IPS reporta códigos internos recortados (P89020, F89021) en vez de CUPS.
 - Siguiente: pasar todos los parámetros a la base con alcance por EPS, prestador o formato, y simulacros de "EPS nueva". Ver `documentos/PLAN_PARAMETROS_EN_BD.md`.
+- Próximas pruebas (OCR con los arreglos, carpetas FOMAG, Husrtunja, IPS_OFTALMOLOGICA y MAYO, inicio de la migración): `documentos/PLAN_PRUEBAS_2026-10-03.md`.
 

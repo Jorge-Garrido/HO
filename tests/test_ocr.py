@@ -96,3 +96,28 @@ def test_autoridad_del_documento_eps_cuando_xml_y_rips_coinciden_mal(tmp_path):
     assert c.valor_final == "307952247"
     assert set(c.documento_sospechoso.split(",")) >= {"xml", "rips"}
     assert c.resultado == "grave"
+
+
+def test_numero_cortado_por_el_detector_se_relee_con_caja_ampliada(tmp_path):
+    """El detector deja por fuera el primer dígito ('7196996' en vez de '17196996'): la cascada
+    debe releer la línea con la caja ampliada y confirmar el número completo."""
+    from validador.ocr import cascada
+
+    src = pymupdf.open()
+    p = src.new_page(width=420, height=120)
+    p.insert_text((20, 60), "No. Autorizacion : 17196996", fontsize=12)
+    pix = p.get_pixmap(dpi=200)
+    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3].copy()
+    lectura = motor.leer(img)
+    doc = a_layout.a_layout([(imagenes.ImagenPagina(pagina=1, imagen=img, bbox=(0, 0, 420, 120)), lectura)])
+    numero = next(w for w in doc.palabras if "17196996" in w.texto)
+    # Simular el detector cortado: la caja de la línea empieza después del primer dígito.
+    x0, y0, x1, y1 = numero.linea_px
+    ancho_digito = (x1 - x0) / max(len(numero.linea_texto or numero.texto), 1)
+    inicio_numero = x0 + (x1 - x0) * (numero.linea_texto or "").find("17196996") / max(len(numero.linea_texto or ""), 1)
+    for w in doc.palabras:
+        if w.linea_px == numero.linea_px:
+            w.linea_px = (inicio_numero + ancho_digito * 1.1, y0, x1, y1)
+    numero.texto = "7196996"
+    r = cascada.resolver(cascada.DocumentoEscaneado(doc, {1: img}), "numero_autorizacion", "17196996")
+    assert r.estado == "confirmado" and r.leido == "17196996", r

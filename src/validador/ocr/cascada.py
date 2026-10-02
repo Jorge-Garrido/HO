@@ -145,6 +145,18 @@ def _lineas(doc: DocumentoEscaneado, campo: str, v: localizar.Verificacion) -> l
     return list(vistas.values())[:8]
 
 
+# Cuánto se amplía la caja de la línea a cada lado, en altos de línea (~1-2 caracteres).
+AMPLIACION_CAJA = 1.5
+
+
+def _ampliar(caja: tuple, forma: tuple) -> tuple[float, float, float, float]:
+    x0, y0, x1, y1 = caja
+    alto = max(y1 - y0, 1)
+    h, w = forma[:2]
+    extra = alto * AMPLIACION_CAJA
+    return (max(0.0, x0 - extra), max(0.0, y0 - alto * 0.15), min(float(w), x1 + extra), min(float(h), y1 + alto * 0.15))
+
+
 def _dudoso(alternativas: list[tuple[str, float]], leido: str, esperado: str) -> bool:
     """El OCR dudó en esta posición: el dígito leído no tiene confianza alta y el esperado
     aparece como alternativa con alguna confianza."""
@@ -220,10 +232,16 @@ def resolver(doc: DocumentoEscaneado, campo: str, esperado: str) -> Resolucion:
             votar(cerca[0], "ppocr")
         lecturas["paddle"] = v.valor_encontrado
 
-    for pagina, caja, texto_linea in _lineas(doc, campo, v):
-        img = doc.imagenes.get(pagina)
-        if img is None:
-            continue
+    # Cada línea se lee con su caja y, si no se confirma, con la caja ampliada: el detector a
+    # veces deja por fuera el primer dígito y los dos motores leen el mismo número cortado.
+    intentos = [
+        (pagina, c)
+        for pagina, caja, _ in _lineas(doc, campo, v)
+        if doc.imagenes.get(pagina) is not None
+        for c in (caja, _ampliar(caja, doc.imagenes[pagina].shape))
+    ]
+    for pagina, caja in intentos:
+        img = doc.imagenes[pagina]
         limpio = recorte.limpiar(recorte.recortar(img, caja))
 
         # 2a. PP-OCR reconocedor sobre el recorte limpio
