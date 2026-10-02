@@ -316,3 +316,10 @@ validador tarifario importar documentos/base_cups.xlsx --uvb-anio 2025
 validador procesar "nuevaeps/NUEVA EPS EXITOSA"
 VALIDADOR_DB_URL=postgresql+psycopg://usuario@host/validador validador procesar ...
 ```
+
+## 15. Generalización a otras EPS e IPS (2026-10-02)
+
+- Prueba con COOSALUD y FAMISANAR (5.812 facturas de otra IPS, disco externo): descubrimiento en cualquier estructura de carpetas y zips, emparejamiento de códigos entre fuentes, lectura de nombres sin confundir prosa con etiquetas, OCR por motores independientes. Sin código específico por EPS; la regresión contra la línea base se mantuvo idéntica.
+- Hallazgo real sistemático: el RIPS de esa IPS reporta códigos internos recortados (P89020, F89021) en vez de CUPS.
+- Siguiente: pasar todos los parámetros a la base con alcance por EPS, prestador o formato, y simulacros de "EPS nueva". Ver `documentos/PLAN_PARAMETROS_EN_BD.md`.
+
