@@ -202,6 +202,29 @@ def _recorrer(carpeta: Path, cache: Path, cfg: Config, omitidos: list[str], prof
                 yield ruta, list(ruta.relative_to(carpeta).parent.parts)
 
 
+# Número de factura en el nombre de un XML o RIPS: prefijo DIAN (letras) + consecutivo.
+# '900012660_FEAV57789', 'CUV_FCOB123', 'FE4417197_CUV' -> FEAV, FCOB, FE.
+_RE_PREFIJO = re.compile(r"(?:^|_)([A-Z]{2,6})(\d{3,})(?:_|$)")
+# Palabras que aparecen junto al número y no son prefijos de factura.
+_NO_PREFIJOS = {"CUV", "JSON", "RIPS", "XML"}
+
+
+def patron_factura(archivos: list[tuple[Path, list[str]]], cfg: Config = _CFG) -> str:
+    """Patrón del número de factura: el de la configuración más los prefijos DIAN que aparecen en
+    los nombres de los XML y RIPS del árbol. Cada IPS tiene su propia numeración (FE, FEAV, FCOB…):
+    así una IPS nueva no necesita configuración."""
+    prefijos = set()
+    for archivo, _ in archivos:
+        if archivo.suffix.lower() in (".xml", ".json"):
+            for m in _RE_PREFIJO.finditer(archivo.stem.upper()):
+                if m.group(1) not in _NO_PREFIJOS:
+                    prefijos.add(m.group(1))
+    if not prefijos:
+        return cfg.patron_factura
+    aprendido = "(?:" + "|".join(sorted(prefijos, key=len, reverse=True)) + r")\d{3,}"
+    return f"{cfg.patron_factura}|{aprendido}"
+
+
 def descubrir(raiz: Path, cfg: Config = _CFG, solo_sueltos: bool = False) -> Descubrimiento:
     """Agrupa todos los archivos bajo ``raiz`` por número de factura.
 
@@ -209,11 +232,12 @@ def descubrir(raiz: Path, cfg: Config = _CFG, solo_sueltos: bool = False) -> Des
     cercana que lo tenga. Archivos sin número de factura se reportan como omitidos.
     Con ``solo_sueltos`` solo se miran los archivos directamente en ``raiz`` (y sus zip).
     """
-    patron = re.compile(cfg.patron_factura, re.I)
     cache = Path(cfg.cache_descomprimidos)
     omitidos: list[str] = []
     grupos: dict[str, CarpetaFactura] = {}
-    for archivo, contexto in _recorrer(raiz, cache, cfg, omitidos, solo_sueltos=solo_sueltos):
+    archivos = list(_recorrer(raiz, cache, cfg, omitidos, solo_sueltos=solo_sueltos))
+    patron = re.compile(patron_factura(archivos, cfg), re.I)
+    for archivo, contexto in archivos:
         m = patron.search(archivo.stem)
         if m is None:
             m = next((x for x in (patron.search(c) for c in reversed(contexto)) if x), None)

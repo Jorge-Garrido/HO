@@ -225,3 +225,55 @@ def test_autorizaciones_repartidas_entre_documentos_son_aviso():
         CampoExtraido(campo="numero_autorizacion", valor="17983717", fuente="autorizacion_scan", confianza=0.98),
     ], Config())
     assert r.resultado == "aviso" and r.valor_final == "17983717,17983759"
+
+
+def test_prefijo_de_factura_se_aprende_de_los_xml(tmp_path):
+    """FOMAG factura con prefijo FCOB: no hay que configurarlo, se aprende de los nombres de XML/RIPS."""
+    c = Caso(factura="FCOB900")
+    base = tmp_path / "L"
+    (base / "X_RIPS" / "FCOB900").mkdir(parents=True)
+    (base / "X_RIPS" / "FCOB900" / "FCOB900.xml").write_bytes(xml_bytes(c))
+    (base / "X_RIPS" / "FCOB900" / "CUV_FCOB900.json").write_text(json.dumps(cuv_dict(c)), encoding="utf-8")
+    _pdf(base / "X_FACTURAS" / "FCOB900" / "FEV_800_FCOB900.pdf")
+    h = discover.descubrir(base, _cfg(tmp_path))
+    assert [cf.factura for cf in h.facturas] == ["FCOB900"] and h.omitidos == []
+    assert h.facturas[0].xml and h.facturas[0].cuv and h.facturas[0].pdf("FEV")
+
+
+def test_resolucion_dian_no_es_numero_de_autorizacion():
+    from validador.data_preprocessing.layout import DocLayout, Fila
+    from validador.localizar import extraer
+
+    def fila(i, texto):
+        ps = [Palabra(t, 10 + 60 * j, 20 * i, 60 + 60 * j, 20 * i + 8, 1, i) for j, t in enumerate(texto.split())]
+        return Fila(1, i, ps)
+
+    doc = DocLayout(filas=[fila(0, "AUTORIZACION DE NUMERACION DE FACTURACION No. 18764099682897"),
+                           fila(1, "NUMERO DE AUTORIZACION: 16097492")])
+    assert extraer(doc, "numero_autorizacion") == "16097492"
+
+
+def test_rango_de_numeracion_dian_y_nombre_del_funcionario():
+    from validador.data_preprocessing.layout import DocLayout, Fila
+    from validador.localizar import extraer
+
+    def fila(i, texto, x=10):
+        ps = [Palabra(t, x + 60 * j, 20 * i, x + 50 + 60 * j, 20 * i + 8, 1, i) for j, t in enumerate(texto.split())]
+        return Fila(1, i, ps)
+
+    fev = DocLayout(filas=[fila(0, "Modalidad: Electrónica - Número de Autorización: 18764099682897 desde FCOB1 hasta FCOB9999")])
+    assert extraer(fev, "numero_autorizacion") is None
+    pde = DocLayout(filas=[fila(0, "Nombre Paciente Sexo"), fila(1, "PEREZ GOMEZ JUAN"), fila(2, "Funcionario Nombre: LOPEZ RUIZ ANA")])
+    assert extraer(pde, "paciente_nombre") == "PEREZ GOMEZ JUAN"
+
+
+def test_encabezado_generico_nombre_no_es_el_paciente():
+    from validador.data_preprocessing.layout import DocLayout, Fila
+    from validador.localizar import extraer
+
+    def fila(i, palabras):
+        return Fila(1, i, [Palabra(t, x, 20 * i, x + 40, 20 * i + 8, 1, i) for t, x in palabras])
+
+    impuestos = DocLayout(filas=[fila(0, [("Nombre", 10), ("Base", 200), ("Porcentaje", 300)]),
+                                 fila(1, [("SERVICIOS", 10), ("GENERALES", 55), ("100", 200)])])
+    assert extraer(impuestos, "paciente_nombre") is None

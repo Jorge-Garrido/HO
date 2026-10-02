@@ -57,6 +57,19 @@ ETIQUETAS: dict[str, list[str]] = {
     "cups": ["CODIGO CUPS", "SERVICIOS AUTORIZADOS", "PROCEDIMIENTOS AUTORIZADOS", "CUPS", "CODIGO", "COD"],
 }
 
+# Contextos que invalidan una etiqueta: si alguna de estas palabras está en la misma fila, la
+# etiqueta habla de otra cosa. 'Autorización de numeración de facturación No. 18764…' es la
+# resolución de la DIAN que va en toda factura, no una autorización de servicios.
+ETIQUETAS_NEGATIVAS: dict[str, set[str]] = {
+    # 'Modalidad: Electrónica - Número de Autorización: 18764… desde FCOB1 hasta FCOB9999 Vigencia…'
+    "numero_autorizacion": {"NUMERACION", "RESOLUCION", "DIAN", "FACTURACION", "HABILITACION", "MODALIDAD",
+                            "DESDE", "HASTA", "VIGENCIA", "PREFIJO", "RANGO"},
+}
+
+# Etiquetas genéricas que, sueltas y sin dos puntos, no bastan: 'Nombre' encabeza también la tabla
+# de impuestos o de servicios. Con dos puntos ('Nombre:') sí cuentan.
+ETIQUETAS_GENERICAS: dict[str, set[str]] = {"paciente_nombre": {"NOMBRE", "NOMBRES"}}
+
 # Cercanía aceptada entre la etiqueta y el valor (puntos PDF).
 MAX_DISTANCIA_H = 300
 FILAS_ABAJO = 2
@@ -238,7 +251,7 @@ def _resultado(campo: str, estado: Estado, cand: _Candidato | None, ancla: Ancla
 
 def verificar(doc: DocLayout, campo: str, esperado: str) -> Verificacion:
     tipo = TIPOS[campo]
-    anc = anclas(doc, campo)
+    anc = [a for a in anclas(doc, campo) if not _contexto_negativo(doc, a)]
     if tipo in ("codigo", "documento"):
         return _verificar_codigo(doc, campo, esperado, anc)
     if tipo == "nombre":
@@ -444,6 +457,36 @@ PALABRAS_ETIQUETA = {
 MAX_TOKENS_NOMBRE = 6
 
 
+# Hueco entre palabras (en altos de letra) a partir del cual empieza otra columna o celda.
+HUECO_COLUMNA = 2.5
+# Un encabezado de columna es corto ('Nombre Paciente'); más palabras seguidas son prosa.
+MAX_PALABRAS_ENCABEZADO = 3
+
+
+def _separadas(a: Palabra, b: Palabra) -> bool:
+    return b.x0 - a.x1 > HUECO_COLUMNA * max(a.alto, b.alto, 1.0)
+
+
+def _celda_debajo(doc: DocLayout, a: Ancla) -> list[Palabra]:
+    """Valor bajo un encabezado de tabla: en la fila de abajo, desde la palabra alineada con el
+    inicio de la celda del encabezado (palabras contiguas alrededor de la etiqueta)."""
+    fila = doc.filas[a.fila].palabras
+    k = next((k for k, p in enumerate(fila) if p is a.palabras[0]), 0)
+    i = j = k
+    while i > 0 and not _separadas(fila[i - 1], fila[i]):
+        i -= 1
+    while j + 1 < len(fila) and not _separadas(fila[j], fila[j + 1]):
+        j += 1
+    if j - i + 1 > MAX_PALABRAS_ENCABEZADO:
+        return []  # tira larga de palabras: es prosa ('firma del paciente o acudiente…'), no un encabezado
+    inicio = fila[i].x0
+    if a.fila + 1 >= len(doc.filas) or doc.filas[a.fila + 1].pagina != a.pagina:
+        return []
+    abajo = sorted(doc.filas[a.fila + 1].palabras, key=lambda p: p.x0)
+    candidatas = [p for p in abajo if p.x1 > inicio - 2 * max(p.alto, 1.0)]
+    return candidatas
+
+
 def _nombre_de(palabras: list[Palabra]) -> str | None:
     """El nombre que sigue a la etiqueta, o None si lo que sigue no tiene forma de nombre.
 
@@ -451,8 +494,12 @@ def _nombre_de(palabras: list[Palabra]) -> str | None:
     un nombre si trae más de MAX_TOKENS_NOMBRE palabras o comas en medio.
     """
     tokens: list[str] = []
+    anterior: Palabra | None = None
     for p in palabras:
         t = p.texto.strip()
+        if anterior is not None and tokens and anterior.fila == p.fila and _separadas(anterior, p):
+            break  # hueco grande: empieza otra columna (sexo, edad…)
+        anterior = p
         limpio = re.sub(r"[^A-Za-zÁÉÍÓÚÑÜáéíóúñü]", "", t)
         palabra = normalize.sin_tildes(limpio).upper()
         if re.search(r"\d", t) or palabra in TIPOS_DOCUMENTO or palabra in PALABRAS_ETIQUETA or (tokens and t.endswith(":")):
@@ -467,12 +514,21 @@ def _nombre_de(palabras: list[Palabra]) -> str | None:
     return normalize.nombre(" ".join(tokens))
 
 
+def _contexto_negativo(doc: DocLayout, a: Ancla) -> bool:
+    negativas = ETIQUETAS_NEGATIVAS.get(a.campo)
+    if not negativas:
+        return False
+    palabras = {re.sub(r"[^A-Z]", "", p.norm) for p in doc.filas[a.fila].palabras}
+    return bool(palabras & negativas)
+
+
 def extraer(doc: DocLayout, campo: str) -> str | None:
     tipo = TIPOS[campo]
-    todas = anclas(doc, campo)
-    # Primero las etiquetas con dos puntos ('NOMBRE:'): una palabra suelta en un párrafo
-    # ('paciente quien asiste...') no es una etiqueta. Luego la más específica y el orden de lectura.
-    for a in sorted(todas, key=lambda a: (not a.dos_puntos, a.rango, a.fila)):
+    todas = [a for a in anclas(doc, campo) if not _contexto_negativo(doc, a)]
+    # Primero la etiqueta más específica del diccionario ('PACIENTE' antes que 'NOMBRE', que también
+    # rotula al funcionario que firma); luego el orden de lectura. Las palabras sueltas en prosa
+    # ('paciente quien asiste...') las descarta la validación del valor (ver _nombre_de).
+    for a in sorted(todas, key=lambda a: (a.rango, a.fila)):
         pegado = [x for x in _piezas_etiqueta(a.palabras[-1]) if x != a.texto.split()[-1]]
         palabras = _vecinos(doc, a)
         if tipo == "codigo":
@@ -495,9 +551,11 @@ def extraer(doc: DocLayout, campo: str) -> str | None:
                     return normalize.documento_id(t, toks[i + 1])
         elif tipo == "nombre":
             if not a.dos_puntos and len(a.texto.split()) == 1:
+                if a.texto in ETIQUETAS_GENERICAS.get(campo, set()):
+                    continue
                 # Palabra suelta sin dos puntos ('...el paciente cancela...'): solo es etiqueta si
                 # el valor va debajo, como encabezado de una tabla; a la derecha suele ser prosa.
-                palabras = [p for p in palabras if p.fila > a.fila]
+                palabras = _celda_debajo(doc, a)
             if (nombre := _nombre_de(palabras)) is not None:
                 return nombre
         elif tipo == "dinero":

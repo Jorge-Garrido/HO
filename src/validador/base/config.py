@@ -92,6 +92,7 @@ class Config(BaseModel):
         "HVE": "HEV",
         "HISTORIA": "HEV",
         "AUTO": "PDE",
+        "AUT": "PDE",
         "AUTORIZACION": "PDE",
         "ORDEN": "OPF",
         "OPFF": "OPF",
