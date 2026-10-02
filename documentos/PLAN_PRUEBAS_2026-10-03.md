@@ -62,6 +62,18 @@ la página. Debería tardar minutos.
 por confirmadas, y anotar si el OCR acertó. Con eso se estima la precisión real. Es el primer
 paso del conjunto etiquetado (plan de OCR, punto 5).
 
+**Experimento: caja por componentes conectados (idea del usuario).** Alternativa a la caja
+ampliada fija: en la franja binarizada de la línea, detectar los caracteres (componentes
+conectados) y extender la caja del número mientras el siguiente carácter esté a un hueco
+parecido al típico (≤ 1,5-2 × la mediana) y tenga alto y tono similares; un hueco grande marca
+otra palabra. Cuidados: unir componentes partidos (solape vertical), estimar dígitos pegados por
+ancho típico, filtrar ruido por tamaño, medir huecos entre bordes y no entre centros. Usar el
+**tono** (las imágenes vienen a color) para separar sellos azules o morados de la impresión
+negra antes de binarizar.
+- Medir sobre los mismos casos de COOSALUD: números cortados recuperados y casos que empeoran
+  (p. ej. que se coma la etiqueta vecina), contra la caja fija.
+- Si gana, reemplaza a la caja fija; si empata, se queda la fija, que es más simple.
+
 **Si el OCR sigue siendo el cuello de botella**, siguiente mejora en orden:
 1. Renderizar la página a 300 dpi cuando la imagen incrustada sea de menor resolución.
 2. Guardar la zona del número por formato de autorización (`zona_ocr`, ver PLAN_PARAMETROS_EN_BD).
