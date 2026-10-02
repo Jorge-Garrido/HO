@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .. import __version__, pipeline, report, salida_errores
 from ..base.config import get_config
+from ..data_preprocessing import normalize
 from ..ingest import discover
 from ..reglas import importador as importador_reglas
 from ..reglas.motor import ConjuntoCargado, MotorReglas
@@ -48,24 +49,24 @@ def _importar_tarifario(args: argparse.Namespace) -> int:
     return 0
 
 
-def _trabajo(carpeta, corrida_id, cfg, tarifario, motor):
+def _trabajo(carpeta, corrida_id, cfg, tarifario, motor, parametros=None):
     try:
-        return pipeline.procesar_carpeta(carpeta, corrida_id, cfg, tarifario, None, motor)
+        return pipeline.procesar_carpeta(carpeta, corrida_id, cfg, tarifario, None, motor, parametros)
     except Exception as e:  # una factura rota no detiene la corrida; queda en facturas_con_error.txt
         nombre = getattr(carpeta, "factura", None) or getattr(carpeta, "name", "?")
         logging.getLogger(__name__).error("factura %s: error %s", nombre, type(e).__name__)
         return ("error", nombre, f"{type(e).__name__}: {str(e)[:200]}")
 
 
-def _procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, workers: int):
+def _procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, workers: int, parametros=None):
     """Procesa en paralelo por procesos (el OCR usa CPU). Cada proceso limita sus hilos."""
     if workers <= 1:
         for c in carpetas:
-            yield _trabajo(c, corrida_id, cfg, tarifario, motor)
+            yield _trabajo(c, corrida_id, cfg, tarifario, motor, parametros)
         return
     os.environ["VALIDADOR_OCR_HILOS"] = str(max(1, (os.cpu_count() or 2) // workers))
     with ProcessPoolExecutor(max_workers=workers) as ex:
-        futuros = [ex.submit(_trabajo, c, corrida_id, cfg, tarifario, motor) for c in carpetas]
+        futuros = [ex.submit(_trabajo, c, corrida_id, cfg, tarifario, motor, parametros) for c in carpetas]
         for f in as_completed(futuros):
             yield f.result()
 
@@ -79,6 +80,14 @@ def _procesar(args: argparse.Namespace) -> int:
     if tarifario is None:
         print("AVISO  sin tarifario cargado: no se validan tarifas (use 'validador tarifario importar').")
     motor = _motor(args, cfg, engine)
+    parametros = referencia.cargar_parametros(engine, args.parametros) if engine is not None else None
+    if parametros is not None:
+        # Descubrimiento con los parámetros globales; el vocabulario por EPS se resuelve por factura.
+        cfg = cfg.model_copy(update=parametros.descubrimiento())
+        normalize.ALIAS_TIPO_DOCUMENTO.update(parametros.alias_tipo_documento())
+        print(f"Parámetros de lectura: versión id {parametros.version_id}")
+    else:
+        print("AVISO  sin parámetros de lectura vigentes: se usan los valores por defecto del código.")
 
     raiz = Path(args.ruta)
     if args.por_lote:
@@ -90,11 +99,11 @@ def _procesar(args: argparse.Namespace) -> int:
     else:
         lotes = [(raiz, salida_errores.nombre_eps(raiz))]
     for ruta_lote, nombre in lotes:
-        _procesar_lote(args, cfg, engine, tarifario, motor, ruta_lote, nombre, solo_sueltos=args.por_lote and ruta_lote == raiz)
+        _procesar_lote(args, cfg, engine, tarifario, motor, ruta_lote, nombre, solo_sueltos=args.por_lote and ruta_lote == raiz, parametros=parametros)
     return 0
 
 
-def _procesar_lote(args, cfg, engine, tarifario, motor, raiz: Path, eps: str, solo_sueltos: bool = False) -> None:
+def _procesar_lote(args, cfg, engine, tarifario, motor, raiz: Path, eps: str, solo_sueltos: bool = False, parametros=None) -> None:
     corrida_id = f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}-{secrets.token_hex(2)}"
     salida = Path(args.salida) / corrida_id.replace(":", "")
     if engine is not None:
@@ -106,7 +115,7 @@ def _procesar_lote(args, cfg, engine, tarifario, motor, raiz: Path, eps: str, so
     resultados = []
     errores: list[str] = []
     t0 = time.perf_counter()
-    for i, r in enumerate(_procesar_todas(facturas, corrida_id, cfg, tarifario, motor, args.workers), 1):
+    for i, r in enumerate(_procesar_todas(facturas, corrida_id, cfg, tarifario, motor, args.workers, parametros), 1):
         if isinstance(r, tuple):
             errores.append(f"{r[1]}\t{r[2]}")
             continue
@@ -207,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--reglas", type=int, action="append", help="id de versión de reglas a usar en vez de la vigente (repetible)")
     pr.add_argument("--reglas-archivo", help="conjunto de reglas YAML/JSON sin pasar por la base (pruebas)")
     pr.add_argument("--sin-reglas", action="store_true", help="no aplica las reglas normativas")
+    pr.add_argument("--parametros", type=int, help="id de versión de parámetros de lectura a usar en vez de la vigente")
     pr.add_argument("--por-lote", action="store_true", help="cada subcarpeta de primer nivel es un lote con su propia corrida y reporte")
     pr.add_argument("--sin-copiar", action="store_true", help="no copia las carpetas con error (solo reportes)")
     pr.set_defaults(func=_procesar)

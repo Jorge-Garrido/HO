@@ -204,3 +204,4 @@ class ResultadoFactura(BaseModel):
     tiempos_ms: dict[str, int]
     tarifario_version_id: int | None = None
     reglas: ResumenReglas | None = None
+    parametros_version_id: int | None = None

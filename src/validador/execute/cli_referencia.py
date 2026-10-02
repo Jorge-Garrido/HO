@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..base.config import get_config
 from ..ingest import discover, pdf_text
-from ..reglas import catalogos, condicion, contratos, expediente, importador, primitivas, sombra
+from ..reglas import catalogos, condicion, contratos, expediente, importador, parametros, primitivas, sombra
 from ..reglas.modelos import Regla
 from ..store import db, referencia
 
@@ -257,6 +257,86 @@ def _reglas_proponer(a) -> int:
     return 0
 
 
+# --- parámetros de lectura -------------------------------------------------------------------------
+
+
+def _parametros_importar(a) -> int:
+    conjunto, sha = parametros.leer(Path(a.archivo))
+    engine = _engine()
+    base = referencia.parametros_vigentes_id(engine, conjunto.nombre)
+    pid, nuevo = referencia.guardar_parametros(engine, conjunto, referencia.usuario_actual(a.usuario), "archivo",
+                                               f"{a.archivo} (sha256 {sha[:12]})", base)
+    print(f"{'Versión nueva' if nuevo else 'Ya existía (mismo contenido)'}: parámetros id {pid}, {len(conjunto.parametros)} entradas, estado borrador")
+    if nuevo:
+        print(f"Siguiente paso: validador parametros probar {pid} <carpeta de facturas>")
+    return 0
+
+
+def _parametros_listar(a) -> int:
+    _imprimir_tabla(referencia.listar_parametros(_engine()), ["id", "nombre", "version", "estado", "origen", "base_id", "creado_por", "creado_en"])
+    return 0
+
+
+def _parametros_mostrar(a) -> int:
+    conjunto, fila = referencia.obtener_parametros(_engine(), a.id)
+    if a.json:
+        print(_json(conjunto.model_dump(mode="json")))
+        return 0
+    print(f"Parámetros v{fila['version']} (id {fila['id']}) — {fila['estado']} — {fila['origen']}: {fila['origen_detalle'] or ''}")
+    _imprimir_tabla(
+        [{"tipo": p.tipo, "clave": p.clave, "alcance": p.alcance, "valor": json.dumps(p.valor, ensure_ascii=False)[:70]} for p in conjunto.parametros],
+        ["tipo", "clave", "alcance", "valor"],
+    )
+    return 0
+
+
+def _parametros_probar(a) -> int:
+    cfg = get_config()
+    if not a.con_ocr:
+        cfg = cfg.model_copy(update={"ocr_habilitado": False})
+    engine = _engine()
+    candidato = referencia.cargar_parametros(engine, a.id)
+    contra = a.contra or referencia.parametros_vigentes_id(engine)
+    base = referencia.cargar_parametros(engine, contra) if contra and contra != a.id else None
+    cfg_desc = cfg.model_copy(update=candidato.descubrimiento())
+    facturas = [cf for ruta in a.rutas for cf in discover.descubrir(Path(ruta), cfg_desc).facturas]
+    if a.limite:
+        facturas = facturas[: a.limite]
+    print(f"Prueba en sombra: parámetros {a.id} contra {contra if base else 'los valores por defecto del código'} sobre {len(facturas)} facturas…")
+    informe = sombra.comparar_parametros(facturas, cfg, base, candidato, a.workers)
+    informe.update({"parametros_id": a.id, "contra_id": contra if base else None, "rutas": a.rutas})
+    salida = Path(a.salida) / f"sombra-parametros{a.id}-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}.json"
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    salida.write_text(_json(informe), encoding="utf-8")
+    print(f"Facturas: {informe['facturas']} | con cambios: {informe['facturas_con_cambios']} | por parte: {informe['cambios_por_parte']} | estados: {informe['cambios_de_estado']}")
+    print(f"Informe: {salida}")
+    _, fila = referencia.obtener_parametros(engine, a.id)
+    if fila["estado"] in ("borrador", "en_prueba"):
+        referencia.cambiar_estado(engine, a.id, "en_prueba", referencia.usuario_actual(a.usuario),
+                                  {k: informe[k] for k in ("facturas", "facturas_con_cambios", "cambios_por_parte", "contra_id")} | {"informe": str(salida)},
+                                  entidad="parametro_conjunto")
+        print(f"Estado: en_prueba. Si el resultado es el esperado: validador parametros aprobar {a.id}")
+    return 0
+
+
+def _transicion_parametros(estado: str):
+    def accion(a) -> int:
+        cfg = get_config()
+        detalle = {"nota": a.nota} if getattr(a, "nota", None) else None
+        referencia.cambiar_estado(_engine(), a.id, estado, referencia.usuario_actual(a.usuario), detalle, cfg.aprobacion_cuatro_ojos,
+                                  entidad="parametro_conjunto")
+        print(f"Parámetros {a.id}: {estado}")
+        return 0
+
+    return accion
+
+
+def _parametros_bitacora(a) -> int:
+    for e in referencia.bitacora(_engine(), "parametro_conjunto", a.id):
+        print(f"{e['fecha']:%Y-%m-%d %H:%M}  {e['usuario']:15} {e['accion']:14} {json.dumps(e['detalle'], ensure_ascii=False, default=str) if e['detalle'] else ''}")
+    return 0
+
+
 # --- catálogos y contratos -----------------------------------------------------------------------
 
 
@@ -350,6 +430,33 @@ def registrar(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--norma", help="PDF o texto de la norma, para verificar las citas")
     p.add_argument("--base", type=int)
     p.set_defaults(func=_reglas_proponer)
+
+    q = sub.add_parser("parametros", help="parámetros de lectura versionados (alias, etiquetas, vocabulario)").add_subparsers(dest="accion", required=True)
+    p = q.add_parser("importar", parents=[usuario], help="importa un YAML/JSON como versión nueva (borrador)")
+    p.add_argument("archivo")
+    p.set_defaults(func=_parametros_importar)
+    q.add_parser("listar").set_defaults(func=_parametros_listar)
+    p = q.add_parser("mostrar")
+    p.add_argument("id", type=int)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=_parametros_mostrar)
+    p = q.add_parser("probar", parents=[usuario], help="sombra: procesa con los vigentes y con la versión candidata y compara")
+    p.add_argument("id", type=int)
+    p.add_argument("rutas", nargs="+")
+    p.add_argument("--contra", type=int)
+    p.add_argument("--limite", type=int)
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--con-ocr", action="store_true")
+    p.add_argument("--salida", default="salidas/sombra")
+    p.set_defaults(func=_parametros_probar)
+    for nombre, estado in (("aprobar", "aprobada"), ("activar", "vigente"), ("retirar", "retirada")):
+        p = q.add_parser(nombre, parents=[usuario])
+        p.add_argument("id", type=int)
+        p.add_argument("--nota")
+        p.set_defaults(func=_transicion_parametros(estado))
+    p = q.add_parser("bitacora")
+    p.add_argument("id", type=int)
+    p.set_defaults(func=_parametros_bitacora)
 
     c = sub.add_parser("catalogo", help="catálogos de referencia versionados").add_subparsers(dest="accion", required=True)
     p = c.add_parser("importar", parents=[usuario], help="importa un CSV/XLSX como versión nueva")

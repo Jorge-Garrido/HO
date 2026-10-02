@@ -1,6 +1,6 @@
 # Plan: todos los parámetros en la base de datos y simulacro de EPS nueva
 
-Estado: **plan, no implementado** (2026-10-02). Sale de la prueba de generalización con
+Estado (2026-10-02, tarde): **primer bloque implementado** (sección 8). El resto sigue como plan. Sale de la prueba de generalización con
 COOSALUD y FAMISANAR (5.812 facturas de otra IPS; ver sección 6).
 
 ## 1. Objetivo
@@ -114,3 +114,28 @@ respuesta correcta.
 5. Huella de formato y `zona_ocr`; mejoras de OCR baratas (recorte más ancho al releer, página a 300 dpi).
 6. Agente de incorporación y simulacro con FAMISANAR y COOSALUD como prueba de aceptación.
 7. Radicación como entidad (versiones ORIGINAL / A RADICAR).
+
+## 8. Implementado (bloque 1)
+
+- `reglas/parametros.py`: modelo `Parametro` / `ConjuntoParametros` (validados con Pydantic),
+  resolución por alcance (`eps` > `prestador` > `global`) y `VOCABULARIO_ACTIVO` (contexto por factura).
+- Tabla `parametro_conjunto` con el mismo ciclo de vida y auditoría que las reglas
+  (`cambiar_estado(..., entidad="parametro_conjunto")`).
+- Semilla `referencia/parametros/global.yaml`, generada desde los valores que tenía el código.
+  27 parámetros: alias de soportes, patrón de factura, archivos ignorados, etiquetas del
+  localizador, contextos negativos, etiquetas genéricas y vocabulario.
+- Comandos: `validador parametros importar|listar|mostrar|probar|aprobar|activar|retirar|bitacora`.
+  `probar` procesa cada factura con la versión vigente y con la candidata, y compara el resultado completo.
+- `procesar` usa los parámetros vigentes (o `--parametros <id>`). Descubrimiento con alcance
+  global; el vocabulario del localizador se resuelve por factura con la EPS y el prestador del
+  XML. Cada resultado guarda `parametros_version_id`.
+- Si no hay parámetros en la base, el código usa sus valores por defecto (los mismos de la semilla).
+
+**Aceptación:** regresión `linea-base-v0` 101/101 y 47/48 (+1 mejora conocida); 7.475/7.475
+facturas de COOSALUD, FAMISANAR y FOMAG idénticas con y sin parámetros desde la base.
+
+**Falta (siguientes bloques):** pasar `config.campos` y las severidades a `politica`, los códigos
+recurrentes a catálogo, `zona_ocr` y huella de formato, escenarios (`escenario crear --sin-alcance`)
+para el simulacro de EPS nueva, y Alembic. Aplicar alcance `eps` también al descubrimiento
+requeriría leer el XML antes de agrupar, y hoy no hace falta.
+

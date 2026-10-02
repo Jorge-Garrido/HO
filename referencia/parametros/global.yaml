@@ -1,0 +1,221 @@
+# Parámetros de lectura de documentos — semilla global.
+#
+# Generada desde los valores que tenía el código el 2026-10-02 (config.py, localizar.py,
+# normalize.py), para que migrarlos a la base no cambie ningún resultado. Se importa como
+# versión inmutable: validador parametros importar referencia/parametros/global.yaml
+#
+# alcance: global | prestador:<nit> | eps:<nit>   (el más específico gana)
+# Ver documentos/PLAN_PARAMETROS_EN_BD.md.
+nombre: parametros
+parametros:
+- tipo: alias_soporte
+  clave: FVS
+  valor: FEV
+  alcance: global
+- tipo: alias_soporte
+  clave: HVE
+  valor: HEV
+  alcance: global
+- tipo: alias_soporte
+  clave: HISTORIA
+  valor: HEV
+  alcance: global
+- tipo: alias_soporte
+  clave: AUTO
+  valor: PDE
+  alcance: global
+- tipo: alias_soporte
+  clave: AUT
+  valor: PDE
+  alcance: global
+- tipo: alias_soporte
+  clave: AUTORIZACION
+  valor: PDE
+  alcance: global
+- tipo: alias_soporte
+  clave: ORDEN
+  valor: OPF
+  alcance: global
+- tipo: alias_soporte
+  clave: OPFF
+  valor: OPF
+  alcance: global
+- tipo: patron_factura
+  clave: base
+  valor: FE[A-Z]{0,3}\d{3,}
+  alcance: global
+- tipo: ignorar_archivo
+  clave: lista
+  valor:
+  - .*
+  - desktop.ini
+  - thumbs.db
+  - '*.xlsx'
+  - '*.xls'
+  - '*.docx'
+  - '*:Zone.Identifier'
+  alcance: global
+- tipo: etiqueta_campo
+  clave: numero_factura
+  valor:
+  - FACTURA ELECTRONICA DE VENTA
+  - NUMERO DE FACTURA
+  - FACTURA
+  - 'NO'
+  alcance: global
+- tipo: etiqueta_campo
+  clave: cufe
+  valor:
+  - CUFE
+  alcance: global
+- tipo: etiqueta_campo
+  clave: nit_emisor
+  valor:
+  - NIT
+  alcance: global
+- tipo: etiqueta_campo
+  clave: nit_eps
+  valor:
+  - NIT/ID
+  - NIT
+  alcance: global
+- tipo: etiqueta_campo
+  clave: paciente_id
+  valor:
+  - TIPO Y NUMERO DE IDENTIFICACION
+  - IDENTIFICACION
+  - DOCUMENTO DE IDENTIDAD
+  - CEDULA
+  - N° DOCUMENTO
+  - NUMERO DE DOCUMENTO
+  - AFILIADO
+  - ID
+  - NOMBRE
+  alcance: global
+- tipo: etiqueta_campo
+  clave: paciente_nombre
+  valor:
+  - NOMBRE DEL PACIENTE
+  - PACIENTE
+  - NOMBRES
+  - NOMBRE
+  - USUARIO
+  - AFILIADO
+  alcance: global
+- tipo: etiqueta_campo
+  clave: numero_autorizacion
+  valor:
+  - NUMERO DE AUTORIZACION
+  - NO AUTORIZACION
+  - CONSULTAR AMBULATORIO
+  - AUTORIZACION
+  - AUT
+  alcance: global
+- tipo: etiqueta_campo
+  clave: id_interno_paciente
+  valor:
+  - IDENTIFICADOR UNICO
+  - CONSECUTIVO INTERNO
+  - HISTORIA CLINICA
+  alcance: global
+- tipo: etiqueta_campo
+  clave: valor_total
+  valor:
+  - TOTAL A PAGAR
+  - VALOR TOTAL
+  - TOTAL
+  alcance: global
+- tipo: etiqueta_campo
+  clave: fecha_ingreso
+  valor:
+  - FECHA DE INGRESO
+  - FECHA INGRESO
+  alcance: global
+- tipo: etiqueta_campo
+  clave: fecha_egreso
+  valor:
+  - FECHA DE EGRESO
+  - FECHA EGRESO
+  alcance: global
+- tipo: etiqueta_campo
+  clave: cups
+  valor:
+  - CODIGO CUPS
+  - SERVICIOS AUTORIZADOS
+  - PROCEDIMIENTOS AUTORIZADOS
+  - CUPS
+  - CODIGO
+  - COD
+  alcance: global
+- tipo: etiqueta_negativa
+  clave: numero_autorizacion
+  valor:
+  - DESDE
+  - DIAN
+  - FACTURACION
+  - HABILITACION
+  - HASTA
+  - MODALIDAD
+  - NUMERACION
+  - PREFIJO
+  - RANGO
+  - RESOLUCION
+  - VIGENCIA
+  alcance: global
+- tipo: etiqueta_generica
+  clave: paciente_nombre
+  valor:
+  - NOMBRE
+  - NOMBRES
+  alcance: global
+- tipo: vocabulario
+  clave: palabras_etiqueta
+  valor:
+  - AFILIADO
+  - BENEFICIARIO
+  - CABEZA
+  - CELULAR
+  - CIUDAD
+  - CONTRIBUTIVO
+  - COTIZANTE
+  - DIRECCION
+  - DOCUMENTO
+  - EDAD
+  - EPS
+  - FECHA
+  - HISTORIA
+  - IDENTIFICACION
+  - N
+  - 'NO'
+  - NRO
+  - NUM
+  - NUMERO
+  - PLAN
+  - REGIMEN
+  - SEXO
+  - SUBSIDIADO
+  - TELEFONO
+  - TIPO
+  alcance: global
+- tipo: vocabulario
+  clave: tipos_documento
+  valor:
+  - AS
+  - CC
+  - CD
+  - CE
+  - CN
+  - MS
+  - PA
+  - PE
+  - PT
+  - RC
+  - SC
+  - TI
+  alcance: global
+- tipo: vocabulario
+  clave: alias_tipo_documento
+  valor:
+    PEP: PE
+    PPT: PT
+  alcance: global

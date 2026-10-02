@@ -124,7 +124,7 @@ def _piezas_etiqueta(p: Palabra) -> list[str]:
 def anclas(doc: DocLayout, campo: str) -> list[Ancla]:
     """Todas las apariciones de las etiquetas del campo, más específicas primero."""
     resultado: list[Ancla] = []
-    lista = ETIQUETAS.get(campo, [])
+    lista = _voc().etiquetas.get(campo, [])
     for etiqueta in sorted(lista, key=lambda e: -len(e)):
         objetivo = etiqueta.split()
         for fila in doc.filas:
@@ -404,13 +404,42 @@ _PATRONES_CODIGO = {
 }
 
 
-_TODAS_ETIQUETAS = sorted({tuple(e.split()) for lista in ETIQUETAS.values() for e in lista if len(e.split()) > 1}, key=len, reverse=True)
+
+
+def _vocabulario_por_defecto():
+    from .reglas.parametros import Vocabulario
+
+    return Vocabulario(
+        etiquetas=ETIQUETAS, negativas=ETIQUETAS_NEGATIVAS, genericas=ETIQUETAS_GENERICAS,
+        palabras_etiqueta=PALABRAS_ETIQUETA, tipos_documento=TIPOS_DOCUMENTO,
+    )
+
+
+def _voc():
+    """Vocabulario de la factura que se está leyendo: el de los parámetros vigentes (resuelto por
+    EPS y prestador) o, sin parámetros cargados, las constantes de este módulo."""
+    from .reglas.parametros import VOCABULARIO_ACTIVO
+
+    return VOCABULARIO_ACTIVO.get() or _POR_DEFECTO[0]
+
+
+_POR_DEFECTO: list = []
+_CACHE_TODAS: dict[int, list] = {}
+
+
+def _todas_etiquetas(voc) -> list:
+    clave = id(voc.etiquetas)
+    if clave not in _CACHE_TODAS:
+        _CACHE_TODAS[clave] = sorted(
+            {tuple(e.split()) for lista in voc.etiquetas.values() for e in lista if len(e.split()) > 1}, key=len, reverse=True
+        )
+    return _CACHE_TODAS[clave]
 
 
 def _inicia_etiqueta(palabras: list[Palabra], i: int) -> bool:
     """¿Empieza en palabras[i] una etiqueta conocida de varias palabras (p. ej. 'FECHA INGRESO')?"""
     piezas = [pz for p in palabras[i : i + 6] for pz in _piezas_etiqueta(p)]
-    return any(tuple(piezas[: len(e)]) == e for e in _TODAS_ETIQUETAS)
+    return any(tuple(piezas[: len(e)]) == e for e in _todas_etiquetas(_voc()))
 
 
 def _vecinos(doc: DocLayout, a: Ancla) -> list[Palabra]:
@@ -502,7 +531,8 @@ def _nombre_de(palabras: list[Palabra]) -> str | None:
         anterior = p
         limpio = re.sub(r"[^A-Za-zÁÉÍÓÚÑÜáéíóúñü]", "", t)
         palabra = normalize.sin_tildes(limpio).upper()
-        if re.search(r"\d", t) or palabra in TIPOS_DOCUMENTO or palabra in PALABRAS_ETIQUETA or (tokens and t.endswith(":")):
+        voc = _voc()
+        if re.search(r"\d", t) or palabra in voc.tipos_documento or palabra in voc.palabras_etiqueta or (tokens and t.endswith(":")):
             break
         if not limpio:
             continue
@@ -515,7 +545,7 @@ def _nombre_de(palabras: list[Palabra]) -> str | None:
 
 
 def _contexto_negativo(doc: DocLayout, a: Ancla) -> bool:
-    negativas = ETIQUETAS_NEGATIVAS.get(a.campo)
+    negativas = _voc().negativas.get(a.campo)
     if not negativas:
         return False
     palabras = {re.sub(r"[^A-Z]", "", p.norm) for p in doc.filas[a.fila].palabras}
@@ -551,7 +581,7 @@ def extraer(doc: DocLayout, campo: str) -> str | None:
                     return normalize.documento_id(t, toks[i + 1])
         elif tipo == "nombre":
             if not a.dos_puntos and len(a.texto.split()) == 1:
-                if a.texto in ETIQUETAS_GENERICAS.get(campo, set()):
+                if a.texto in _voc().genericas.get(campo, set()):
                     continue
                 # Palabra suelta sin dos puntos ('...el paciente cancela...'): solo es etiqueta si
                 # el valor va debajo, como encabezado de una tabla; a la derecha suele ser prosa.
@@ -567,3 +597,6 @@ def extraer(doc: DocLayout, campo: str) -> str | None:
                 if (v := _fecha_de(p)) is not None:
                     return v.isoformat()
     return None
+
+
+_POR_DEFECTO.append(_vocabulario_por_defecto())

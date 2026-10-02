@@ -140,7 +140,25 @@ python scripts/agrupar_discrepancias.py salidas/disco_d2/husrtunja/2026-*
 - Registrar por carpeta: qué se cambió, si fue dato (alias, sinónimo) o código genérico, y
   cuánto tiempo tomó. Es la medición real de "cuánto cuesta incorporar un formato".
 
+### Resultado de B hasta ahora (2026-10-02, tarde)
+
+**FOMAG** (1.663 facturas, otra numeración DIAN):
+- Prefijo `FCOB` no reconocido → **19.003 archivos omitidos**. Arreglo genérico: el prefijo se
+  aprende de los nombres de los XML/RIPS. Quedan 17 omitidos y un `.rar`.
+- El PDF de la factura traía la **resolución DIAN de numeración** ("Número de Autorización:
+  18764… desde FCOB1 hasta…") y se leía como autorización en 766 facturas. Arreglo: contextos
+  negativos por campo.
+- Nombre: el encabezado `Nombre Paciente` de una tabla; `Nombre:` del funcionario y `Nombre` de la
+  tabla de impuestos se confundían. Arreglo: celda del encabezado, corte por hueco de columna y
+  encabezados genéricos sin dos puntos no bastan.
+- Resultado: **842 → 99 facturas con *grave***, 0 fallas, sin empeorar COOSALUD ni FAMISANAR.
+- Pendientes por copiar o probar: Husrtunja, IPS_OFTALMOLOGICA, MAYO.
+
 ## C. Migración de parámetros a la base (inicio)
+
+**Hecho el 2026-10-02 (bloque 1).** Ver `PLAN_PARAMETROS_EN_BD.md` §8. Aceptación cumplida:
+7.475/7.475 facturas idénticas con y sin parámetros desde la base.
+
 
 Detalle en `documentos/PLAN_PARAMETROS_EN_BD.md`. Para mañana, solo el primer bloque:
 

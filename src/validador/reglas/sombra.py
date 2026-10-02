@@ -79,3 +79,57 @@ def comparar(carpetas: list, cfg: Config, base: MotorReglas | None, candidato: M
             for r in reglas
         },
     }
+
+
+# --- parámetros de lectura ---------------------------------------------------------------------
+
+
+def _proyeccion(r) -> dict:
+    """Lo que un cambio de parámetros puede alterar en el resultado de una factura."""
+    return {
+        "estado": r.estado,
+        "campos": {c.campo: (c.resultado, c.valor_final, sorted(c.valores_por_fuente.items())) for c in r.campos},
+        "lineas": sorted((l.codigo, l.resultado) for l in r.lineas),
+        "hallazgos": sorted((h.tipo, h.resultado, h.motivo) for h in r.hallazgos),
+    }
+
+
+def _evaluar_parametros(cf, cfg: Config, base, candidato) -> tuple[str, dict, dict] | None:
+    from .. import pipeline
+
+    try:
+        a = pipeline.procesar_carpeta(cf, "sombra", cfg, None, None, None, base)
+        b = pipeline.procesar_carpeta(cf, "sombra", cfg, None, None, None, candidato)
+        return cf.factura, _proyeccion(a), _proyeccion(b)
+    except Exception as e:
+        log.error("factura %s: error %s", getattr(cf, "factura", "?"), type(e).__name__)
+        return None
+
+
+def comparar_parametros(facturas: list, cfg: Config, base, candidato, workers: int = 1) -> dict:
+    """Procesa cada factura con los parámetros vigentes y con los candidatos, y cuenta qué cambia."""
+    if workers > 1:
+        os.environ["VALIDADOR_OCR_HILOS"] = str(max(1, (os.cpu_count() or 2) // workers))
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            filas = list(ex.map(_evaluar_parametros, facturas, [cfg] * len(facturas), [base] * len(facturas), [candidato] * len(facturas)))
+    else:
+        filas = [_evaluar_parametros(f, cfg, base, candidato) for f in facturas]
+    filas = [f for f in filas if f is not None]
+    cambios: Counter[str] = Counter()
+    estados: Counter[str] = Counter()
+    ejemplos: dict[str, list[str]] = defaultdict(list)
+    for factura, a, b in filas:
+        for parte in ("campos", "lineas", "hallazgos"):
+            if a[parte] != b[parte]:
+                cambios[parte] += 1
+                if len(ejemplos[parte]) < MAX_EJEMPLOS:
+                    ejemplos[parte].append(factura)
+        if a["estado"] != b["estado"]:
+            estados[f"{a['estado']} → {b['estado']}"] += 1
+    return {
+        "facturas": len(filas),
+        "facturas_con_cambios": sum(1 for _, a, b in filas if a != b),
+        "cambios_por_parte": dict(cambios),
+        "cambios_de_estado": dict(estados),
+        "ejemplos": dict(ejemplos),
+    }

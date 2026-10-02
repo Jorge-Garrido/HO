@@ -37,6 +37,7 @@ from .base.schemas import (
 )
 from .severity import evaluar_campo, peor
 from .reglas.motor import MotorReglas
+from .reglas.parametros import VOCABULARIO_ACTIVO, Parametros
 from .store import db
 from .tarifario.matcher import Tarifario
 
@@ -62,8 +63,31 @@ def esperados(docs: dict[str, DocumentoExtraido]) -> dict[str, set[str]]:
     return valores
 
 
-def extraer(cf: discover.CarpetaFactura, cfg: Config | None = None) -> dict[str, DocumentoExtraido]:
+def extraer(cf: discover.CarpetaFactura, cfg: Config | None = None, parametros: Parametros | None = None) -> dict[str, DocumentoExtraido]:
+    """Lee todos los documentos. Con ``parametros``, los PDF se leen con el vocabulario resuelto
+    para la EPS y el prestador de esta factura (tomados del XML o del RIPS)."""
     docs: dict[str, DocumentoExtraido] = {}
+    token = None
+    try:
+        token = _activar_vocabulario(cf, parametros)
+        return _extraer(cf, cfg, docs)
+    finally:
+        if token is not None:
+            VOCABULARIO_ACTIVO.reset(token)
+
+
+def _activar_vocabulario(cf: discover.CarpetaFactura, parametros: Parametros | None):
+    if parametros is None:
+        return None
+    eps = prestador = None
+    if cf.xml:
+        x, _ = xml_parser.extraer(cf.xml)
+        eps = x.campos["nit_eps"].valor if "nit_eps" in x.campos else None
+        prestador = x.campos["nit_emisor"].valor if "nit_emisor" in x.campos else None
+    return VOCABULARIO_ACTIVO.set(parametros.vocabulario(eps, prestador))
+
+
+def _extraer(cf: discover.CarpetaFactura, cfg: Config | None, docs: dict[str, DocumentoExtraido]) -> dict[str, DocumentoExtraido]:
     if cf.pdfs.get("UNI") and not cf.pdf("FEV"):
         destino = Path(cfg.ocr_cache_dir).parent / "unificados" if cfg else Path("salidas/unificados")
         for prefijo, (ruta, etiqueta) in unificado.separar(cf.pdfs["UNI"][0], destino).items():
@@ -464,10 +488,11 @@ def procesar_carpeta(
     tarifario: Tarifario | None = None,
     engine: Engine | None = None,
     motor: MotorReglas | None = None,
+    parametros: Parametros | None = None,
 ) -> ResultadoFactura:
     t0 = time.perf_counter()
     cf = ruta if isinstance(ruta, discover.CarpetaFactura) else discover.clasificar(ruta, cfg)
-    docs = extraer(cf, cfg)
+    docs = extraer(cf, cfg, parametros)
     t_digital = time.perf_counter()
 
     principal = _fuente_principal(docs)
@@ -523,6 +548,7 @@ def procesar_carpeta(
         },
         tarifario_version_id=tarifario.version_id if tarifario else None,
         reglas=resumen_reglas,
+        parametros_version_id=parametros.version_id if parametros else None,
     )
     resultado.propuestas_correccion = proponer(resultado)
     if engine is not None:

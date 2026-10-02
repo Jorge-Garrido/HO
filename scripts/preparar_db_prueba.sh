@@ -9,3 +9,7 @@ $V tarifario importar documentos/base_cups.xlsx --uvb-anio 2025 >/dev/null
 $V reglas importar "$REGLAS" >/dev/null
 $V reglas probar 1 "COOSALUD EXITOSAS" --limite 3 --workers 1 --salida "$N/sombra" >/dev/null 2>&1
 $V reglas aprobar 1 >/dev/null && $V reglas activar 1
+# Parámetros de lectura (alias, etiquetas, vocabulario) vigentes desde la base
+$V parametros importar referencia/parametros/global.yaml >/dev/null
+$V parametros probar 1 "COOSALUD EXITOSAS" --limite 3 --workers 1 --salida "$N/sombra" >/dev/null 2>&1
+$V parametros aprobar 1 >/dev/null && $V parametros activar 1

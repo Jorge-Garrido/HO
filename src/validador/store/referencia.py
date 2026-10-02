@@ -42,6 +42,8 @@ from ..reglas.contratos import Contrato, Contratos
 from ..reglas.importador import huella
 from ..reglas.modelos import ConjuntoReglas, EstadoConjunto
 from ..reglas.motor import ConjuntoCargado, MotorReglas
+from ..reglas.parametros import ConjuntoParametros, Parametros
+from ..reglas.parametros import huella as huella_parametros
 from .db import JsonType, ahora, metadata
 
 # --- tablas --------------------------------------------------------------------------------
@@ -83,6 +85,24 @@ regla = Table(
     UniqueConstraint("conjunto_id", "regla_id", "version"),
 )
 Index("ix_regla_regla_id", regla.c.regla_id)
+
+# Parámetros de lectura (alias, etiquetas, vocabulario), con el mismo ciclo de vida que las reglas.
+parametro_conjunto = Table(
+    "parametro_conjunto",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("nombre", String(60), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("estado", String(12), nullable=False, index=True),
+    Column("origen", String(20), nullable=False),
+    Column("origen_detalle", Text),
+    Column("base_id", Integer, ForeignKey("parametro_conjunto.id")),
+    Column("sha256", String(64), nullable=False),
+    Column("contenido", JsonType, nullable=False),
+    Column("creado_en", DateTime(timezone=True), nullable=False),
+    Column("creado_por", String(100), nullable=False),
+    UniqueConstraint("nombre", "version"),
+)
 
 catalogo_version = Table(
     "catalogo_version",
@@ -142,6 +162,8 @@ auditoria = Table(
     Column("detalle", JsonType),
 )
 Index("ix_auditoria_entidad", auditoria.c.entidad, auditoria.c.entidad_id)
+
+TABLAS_CONJUNTO = {"regla_conjunto": regla_conjunto, "parametro_conjunto": parametro_conjunto}
 
 TRANSICIONES: dict[str, set[str]] = {
     "borrador": {"en_prueba", "retirada"},
@@ -246,40 +268,41 @@ def vigente_id(engine: Engine, nombre: str) -> int | None:
 
 
 def cambiar_estado(engine: Engine, conjunto_id: int, nuevo: EstadoConjunto, usuario: str, detalle: dict | None = None,
-                   cuatro_ojos: bool = False) -> None:
+                   cuatro_ojos: bool = False, entidad: str = "regla_conjunto") -> None:
     """Transición del ciclo de vida, con sus controles:
 
     - aprobar exige al menos una prueba en sombra registrada;
     - con ``cuatro_ojos`` quien aprueba no puede ser quien creó la versión;
     - activar retira la versión vigente anterior del mismo conjunto, en la misma transacción.
     """
+    tabla = TABLAS_CONJUNTO[entidad]
     with engine.begin() as con:
-        fila = con.execute(select(regla_conjunto).where(regla_conjunto.c.id == conjunto_id)).mappings().one_or_none()
+        fila = con.execute(select(tabla).where(tabla.c.id == conjunto_id)).mappings().one_or_none()
         if fila is None:
-            raise ErrorReferencia(f"no existe el conjunto de reglas {conjunto_id}")
+            raise ErrorReferencia(f"no existe {entidad} {conjunto_id}")
         actual = fila["estado"]
         if nuevo not in TRANSICIONES[actual]:
             raise ErrorReferencia(f"no se puede pasar de '{actual}' a '{nuevo}'")
         if nuevo == "aprobada":
             probado = con.execute(
                 select(func.count()).select_from(auditoria).where(
-                    auditoria.c.entidad == "regla_conjunto", auditoria.c.entidad_id == conjunto_id, auditoria.c.accion == "prueba_sombra"
+                    auditoria.c.entidad == entidad, auditoria.c.entidad_id == conjunto_id, auditoria.c.accion == "prueba_sombra"
                 )
             ).scalar()
             if not probado:
-                raise ErrorReferencia("no se puede aprobar sin una prueba en sombra (validador reglas probar)")
+                raise ErrorReferencia("no se puede aprobar sin una prueba en sombra (validador reglas|parametros probar)")
             if cuatro_ojos and fila["creado_por"] == usuario:
                 raise ErrorReferencia("la aprueba alguien distinto de quien la creó (aprobacion_cuatro_ojos)")
         if nuevo == "vigente":
             anteriores = con.execute(
-                select(regla_conjunto.c.id).where(regla_conjunto.c.nombre == fila["nombre"], regla_conjunto.c.estado == "vigente")
+                select(tabla.c.id).where(tabla.c.nombre == fila["nombre"], tabla.c.estado == "vigente")
             ).scalars().all()
             for anterior in anteriores:
-                con.execute(update(regla_conjunto).where(regla_conjunto.c.id == anterior).values(estado="retirada"))
-                _auditar(con, usuario, "regla_conjunto", anterior, "retirada", {"reemplazada_por": conjunto_id})
-        con.execute(update(regla_conjunto).where(regla_conjunto.c.id == conjunto_id).values(estado=nuevo))
+                con.execute(update(tabla).where(tabla.c.id == anterior).values(estado="retirada"))
+                _auditar(con, usuario, entidad, anterior, "retirada", {"reemplazada_por": conjunto_id})
+        con.execute(update(tabla).where(tabla.c.id == conjunto_id).values(estado=nuevo))
         accion = {"en_prueba": "prueba_sombra"}.get(nuevo, nuevo)
-        _auditar(con, usuario, "regla_conjunto", conjunto_id, accion, {"desde": actual, **(detalle or {})})
+        _auditar(con, usuario, entidad, conjunto_id, accion, {"desde": actual, **(detalle or {})})
 
 
 def historia_regla(engine: Engine, regla_id: str) -> list[dict]:
@@ -394,6 +417,65 @@ def cargar_contratos(engine: Engine) -> Contratos:
     with engine.connect() as con:
         filas = con.execute(select(contrato_version).where(contrato_version.c.activo.is_(True))).mappings().all()
     return Contratos([(Contrato.model_validate(f["contenido"]), f["id"]) for f in filas])
+
+
+# --- parámetros de lectura ------------------------------------------------------------------------
+
+
+def guardar_parametros(engine: Engine, conjunto: ConjuntoParametros, usuario: str, origen: str,
+                       origen_detalle: str | None = None, base_id: int | None = None) -> tuple[int, bool]:
+    sha = huella_parametros(conjunto)
+    with engine.begin() as con:
+        existente = con.execute(
+            select(parametro_conjunto.c.id).where(
+                parametro_conjunto.c.nombre == conjunto.nombre, parametro_conjunto.c.sha256 == sha,
+                parametro_conjunto.c.estado != "retirada",
+            )
+        ).scalar_one_or_none()
+        if existente is not None:
+            return existente, False
+        version = (con.execute(select(func.max(parametro_conjunto.c.version)).where(parametro_conjunto.c.nombre == conjunto.nombre)).scalar() or 0) + 1
+        pid = con.execute(
+            insert(parametro_conjunto).values(
+                nombre=conjunto.nombre, version=version, estado="borrador", origen=origen, origen_detalle=origen_detalle,
+                base_id=base_id, sha256=sha, contenido=conjunto.model_dump(mode="json"), creado_en=ahora(), creado_por=usuario,
+            )
+        ).inserted_primary_key[0]
+        _auditar(con, usuario, "parametro_conjunto", pid, "creada", {"origen": origen, "detalle": origen_detalle, "base_id": base_id, "parametros": len(conjunto.parametros)})
+    return pid, True
+
+
+def listar_parametros(engine: Engine) -> list[dict]:
+    with engine.connect() as con:
+        filas = con.execute(
+            select(parametro_conjunto.c.id, parametro_conjunto.c.nombre, parametro_conjunto.c.version, parametro_conjunto.c.estado,
+                   parametro_conjunto.c.origen, parametro_conjunto.c.base_id, parametro_conjunto.c.creado_por, parametro_conjunto.c.creado_en)
+            .order_by(parametro_conjunto.c.id)
+        ).mappings()
+        return [dict(f) for f in filas]
+
+
+def obtener_parametros(engine: Engine, pid: int) -> tuple[ConjuntoParametros, dict]:
+    with engine.connect() as con:
+        fila = con.execute(select(parametro_conjunto).where(parametro_conjunto.c.id == pid)).mappings().one_or_none()
+    if fila is None:
+        raise ErrorReferencia(f"no existe el conjunto de parámetros {pid}")
+    return ConjuntoParametros.model_validate(fila["contenido"]), dict(fila)
+
+
+def parametros_vigentes_id(engine: Engine, nombre: str = "parametros") -> int | None:
+    with engine.connect() as con:
+        return con.execute(
+            select(parametro_conjunto.c.id).where(parametro_conjunto.c.nombre == nombre, parametro_conjunto.c.estado == "vigente")
+        ).scalar_one_or_none()
+
+
+def cargar_parametros(engine: Engine, pid: int | None = None) -> Parametros | None:
+    """Los vigentes (o la versión indicada, en cualquier estado, para pruebas)."""
+    pid = pid or parametros_vigentes_id(engine)
+    if pid is None:
+        return None
+    return Parametros(obtener_parametros(engine, pid)[0], pid)
 
 
 # --- motor listo para usar ---------------------------------------------------------------------------

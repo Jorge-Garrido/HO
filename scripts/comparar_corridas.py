@@ -20,7 +20,7 @@ from pathlib import Path
 
 ORDEN = {"ok": 0, "info": 1, "aviso": 2, "grave": 3}
 # Cambian en cada corrida y no son resultado de la validación.
-VOLATILES = {"corrida_id", "ruta_origen", "archivos_origen", "tiempos_ms", "schema_version", "version_pipeline", "reglas"}
+VOLATILES = {"corrida_id", "ruta_origen", "archivos_origen", "parametros_version_id", "tiempos_ms", "schema_version", "version_pipeline", "reglas"}
 
 
 def cargar(carpeta: Path) -> dict[str, dict]:
@@ -30,7 +30,12 @@ def cargar(carpeta: Path) -> dict[str, dict]:
 def sin_reglas(r: dict) -> dict:
     """El resultado como lo habría dado el validador sin motor de reglas."""
     previo = {k: v for k, v in r.items() if k not in VOLATILES}
-    previo["hallazgos"] = [{k: v for k, v in h.items() if k != "regla"} for h in r.get("hallazgos", []) if not h.get("regla")]
+    # Los hallazgos de duplicado ("ya procesada en la corrida X") dependen de la historia de la base
+    # de datos, no de la validación: no se comparan.
+    previo["hallazgos"] = [
+        {k: v for k, v in h.items() if k != "regla"} for h in r.get("hallazgos", [])
+        if not h.get("regla") and h.get("tipo") != "duplicado"
+    ]
     previo["propuestas_correccion"] = r.get("propuestas_correccion", [])
     severidades = [c["resultado"] for c in r["campos"]] + [l["resultado"] for l in r["lineas"]] + [h["resultado"] for h in previo["hallazgos"]]
     previo["estado"] = max(severidades, key=ORDEN.get, default="ok")
