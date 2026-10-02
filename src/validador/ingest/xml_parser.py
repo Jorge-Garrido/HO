@@ -48,13 +48,15 @@ def embebidos(raiz) -> dict[str, etree._Element]:
 def codigo_de_linea(buyers: str | None, descripcion: str | None) -> tuple[str | None, str]:
     """Regla del CUPS por ítem.
 
-    - ``BuyersItemIdentification`` de 6 dígitos: es el CUPS.
+    - ``BuyersItemIdentification`` de 6 dígitos: es el CUPS (con sufijo ``-N`` de variante, también).
     - Si no, y la descripción empieza con 6 dígitos: esos son el CUPS (el ID es un código interno).
     - Si no, se usa el ID tal cual (CUM de medicamentos, códigos de insumos como S55114).
     """
     b = normalize.codigo(buyers)
     if b and re.fullmatch(r"\d{6}", b):
         return b, "xml.buyers"
+    if b and (m := re.fullmatch(r"(\d{6})-\d{1,3}", b)):
+        return m.group(1), "xml.buyers_variante"  # CUPS con sufijo de variante interna: 890202-2
     if descripcion and (m := re.match(r"\s*(\d{6})\b", descripcion)):
         return m.group(1), "xml.descripcion"
     return b, "xml.buyers" if b else "ninguno"

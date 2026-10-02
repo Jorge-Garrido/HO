@@ -186,7 +186,18 @@ def copiar_errores(resultados: list[ResultadoFactura], carpeta_eps: Path) -> int
         if not filas or not r.ruta_origen:
             continue
         destino = carpeta_eps / r.factura
-        shutil.copytree(r.ruta_origen, destino)  # copia literal: todos los archivos originales
+        if r.archivos_origen:
+            # Factura repartida en varias carpetas o zip: se copian solo sus archivos.
+            destino.mkdir(parents=True, exist_ok=True)
+            for origen in map(Path, r.archivos_origen):
+                final = destino / origen.name
+                n = 1
+                while final.exists():
+                    final = destino / f"{origen.stem} ({n}){origen.suffix}"
+                    n += 1
+                shutil.copy2(origen, final)
+        else:
+            shutil.copytree(r.ruta_origen, destino)  # copia literal: todos los archivos originales
         (destino / "_REVISION.txt").write_text(texto_revision(r, filas), encoding="utf-8")
         (destino / "_resultado.json").write_text(r.model_dump_json(indent=2), encoding="utf-8")
         n += 1

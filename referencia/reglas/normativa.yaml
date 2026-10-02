@@ -327,9 +327,38 @@ reglas:
       accion: Adjuntar el registro de la atención antes de radicar.
 
   - id: HC-CONTENIDO-MINIMO
-    nombre: Contenido mínimo del resumen de atención
+    version: 2
+    nombre: Contenido mínimo del resumen de atención (núcleo)
     matriz: [CONS-027, CONS-033]
     norma: {documento: "Res. 2284/2023 Anexo Técnico 1", numeral: "2.1.7-2.1.12", pagina: "8"}
+    vigencia: {desde: 2023-12-28}
+    alcance: factura
+    cuando: {in: [consultas, {var: factura.tipos_servicio}]}
+    primitiva: secciones_presentes
+    # v2: sinónimos de especialidad (optometría/oftalmología: el examen físico es el examen
+    # visual; el plan aparece como TRATAMIENTO). Análisis y revisión por sistemas pasan a
+    # HC-CONTENIDO-COMPLETO (info) mientras auditoría define cómo aplica por especialidad.
+    params:
+      texto: hc.texto
+      secciones:
+        anamnesis: [ANAMNESIS, ENFERMEDAD ACTUAL, MOTIVO DE CONSULTA, MOTIVO DE LA CONSULTA]
+        antecedentes: [ANTECEDENTES, "PATOLOGICOS:"]
+        examen_fisico: [EXAMEN FISICO, EXAMEN OFTALMOLOGICO, AGUDEZA VISUAL, REFRACCION, BIOMICROSCOPIA, MOTILIDAD OCULAR]
+        diagnostico: [DIAGNOSTICO, IMPRESION DIAGNOSTICA]
+        plan_de_cuidado: [PLAN DE MANEJO, "PLAN:", CONDUCTA, ORDENES MEDICAS, TRATAMIENTO, RECOMENDACIONES]
+    resultado:
+      tipo: glosa_potencial
+      severidad: aviso
+      codigo_glosa: S00201
+      documento: hc
+      mensaje: La historia clínica de la consulta no muestra todas las secciones del contenido mínimo (anamnesis, antecedentes, examen, diagnóstico, plan).
+      verificar: "HEV: buscar las secciones indicadas; puede que la carpeta traiga otra nota (consentimiento, procedimiento) y no la de la consulta"
+      accion: Adjuntar la nota de la consulta facturada o completar el registro en el sistema clínico.
+
+  - id: HC-CONTENIDO-COMPLETO
+    nombre: Análisis y revisión por sistemas en el resumen de atención
+    matriz: [CONS-027]
+    norma: {documento: "Res. 2284/2023 Anexo Técnico 1", numeral: "2.1.7 y 2.1.10", pagina: "8"}
     vigencia: {desde: 2023-12-28}
     alcance: factura
     cuando: {in: [consultas, {var: factura.tipos_servicio}]}
@@ -337,21 +366,14 @@ reglas:
     params:
       texto: hc.texto
       secciones:
-        anamnesis: [ANAMNESIS, ENFERMEDAD ACTUAL, MOTIVO DE CONSULTA]
         revision_por_sistemas: [REVISION POR SISTEMAS]
-        antecedentes: [ANTECEDENTES, "PATOLOGICOS:"]
-        examen_fisico: [EXAMEN FISICO]
         analisis: [ANALISIS]
-        diagnostico: [DIAGNOSTICO, IMPRESION DIAGNOSTICA]
-        plan_de_cuidado: [PLAN DE MANEJO, "PLAN:", CONDUCTA, ORDENES MEDICAS]
     resultado:
       tipo: glosa_potencial
-      severidad: aviso
+      severidad: info
       codigo_glosa: S00201
       documento: hc
-      mensaje: La historia clínica de la consulta no muestra todas las secciones del contenido mínimo (anamnesis, examen físico, análisis, diagnóstico, plan).
-      verificar: "HEV: buscar las secciones indicadas; puede que la carpeta traiga otra nota (consentimiento, procedimiento) y no la de la consulta"
-      accion: Adjuntar la nota de la consulta facturada o completar el registro en el sistema clínico.
+      mensaje: La historia clínica no muestra análisis o revisión por sistemas (PENDIENTE auditoría - cómo aplica en especialidades como optometría).
 
   # ---------------------------------------------------------------- Contrato (no evaluables hasta cargar el contrato)
 

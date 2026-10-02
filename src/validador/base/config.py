@@ -23,6 +23,9 @@ class ReglaCampo(BaseModel):
     comparador: Comparador = "exacta"
     si_difiere: Severidad = "grave"
     si_falta_en_todas: Severidad = "info"
+    # Solo comparador "conjunto": una fuente trae una parte de los valores de otra (p. ej. el
+    # PDF muestra una autorización y el RIPS una por servicio). No es contradicción.
+    si_subconjunto: Severidad = "aviso"
 
 
 class ReglasTarifa(BaseModel):
@@ -79,6 +82,30 @@ class Config(BaseModel):
         "paciente_id": r"^[A-Z]{2,3} [0-9A-Z]{3,20}$",
     }
 
+    # --- Descubrimiento de facturas en carpetas de cualquier estructura -------------------
+    # Número de factura (prefijo DIAN + consecutivo) en nombres de archivo o carpeta.
+    patron_factura: str = r"FE[A-Z]{0,3}\d{3,}"
+    # Nombres de soportes que no siguen la nomenclatura de la Res. 2284 (PREFIJO_NIT_FACTURA).
+    # Se compara con la primera palabra del nombre: "ORDEN N.pdf" -> ORDEN -> OPF.
+    alias_soportes: dict[str, str] = {
+        "FVS": "FEV",  # COOSALUD llama FVS a la factura
+        "HVE": "HEV",
+        "HISTORIA": "HEV",
+        "AUTO": "PDE",
+        "AUTORIZACION": "PDE",
+        "ORDEN": "OPF",
+        "OPFF": "OPF",
+    }
+    # Archivos que no son soportes (se ignoran sin aviso).
+    ignorar_archivos: list[str] = [".*", "desktop.ini", "thumbs.db", "*.xlsx", "*.xls", "*.docx", "*:Zone.Identifier"]
+    # Los zip se descomprimen una vez en esta carpeta (nunca en el origen).
+    cache_descomprimidos: str = "salidas/descomprimidos"
+    # Dos archivos del mismo tipo (XML, RIPS, CUV, factura) con contenido distinto para una factura.
+    si_versiones_distintas: Severidad = "aviso"
+    # El tarifario cargado es institucional: solo se aplica a facturas de estos prestadores (NIT).
+    # Pendiente: pasar al contrato (contrato.tarifa.tarifario_version_id).
+    tarifario_nits_prestador: list[str] = ["891800231"]
+
     # Documentos esperados por prefijo de archivo (nomenclatura de soportes).
     documentos_obligatorios: list[str] = ["FEV"]
     # Sin HEV es normal en apoyo diagnóstico (traen PDX): solo info.
@@ -107,6 +134,8 @@ class Config(BaseModel):
     lineas_si_codigo_falta: Severidad = "grave"
     lineas_si_valor_difiere: Severidad = "grave"
     lineas_si_cantidad_difiere: Severidad = "aviso"
+    # Misma línea (mismo valor) con código distinto entre fuentes, p. ej. código interno recortado.
+    lineas_si_codigo_difiere: Severidad = "aviso"
     lineas_si_fecha_fuera_periodo: Severidad = "aviso"
 
     hc_si_tipo_consulta_difiere: Severidad = "aviso"
@@ -129,6 +158,8 @@ class Config(BaseModel):
     # de ruido. Si dos motores confirman la lectura distinta, es "aviso".
     si_ocr_incierto_difiere: Severidad = "info"
     autorizacion_no_legible: Severidad = "aviso"
+    # El escaneo lee el número digital sin sus primeros dígitos (recorte de imagen cortado).
+    si_escaneo_recortado: Severidad = "aviso"
 
     # Motor de reglas normativas (las reglas, catálogos y contratos viven en la base de datos).
     reglas_habilitadas: bool = True

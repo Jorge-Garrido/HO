@@ -20,7 +20,7 @@ from pathlib import Path
 
 ORDEN = {"ok": 0, "info": 1, "aviso": 2, "grave": 3}
 # Cambian en cada corrida y no son resultado de la validación.
-VOLATILES = {"corrida_id", "ruta_origen", "tiempos_ms", "schema_version", "version_pipeline", "reglas"}
+VOLATILES = {"corrida_id", "ruta_origen", "archivos_origen", "tiempos_ms", "schema_version", "version_pipeline", "reglas"}
 
 
 def cargar(carpeta: Path) -> dict[str, dict]:

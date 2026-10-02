@@ -111,7 +111,7 @@ def _reglas_probar(a) -> int:
         contra = None
     candidato = referencia.cargar_motor(engine, [a.id])
     base = referencia.cargar_motor(engine, [contra]) if contra else None
-    carpetas = [c for ruta in a.rutas for c in discover.carpetas_de_facturas(Path(ruta))]
+    carpetas = [c for ruta in a.rutas for c in discover.descubrir(Path(ruta), cfg).facturas]
     if a.limite:
         carpetas = carpetas[: a.limite]
     print(f"Prueba en sombra: conjunto {a.id} contra {contra or 'ninguno (primera versión)'} sobre {len(carpetas)} facturas…")

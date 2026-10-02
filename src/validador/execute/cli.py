@@ -51,24 +51,23 @@ def _importar_tarifario(args: argparse.Namespace) -> int:
 def _trabajo(carpeta, corrida_id, cfg, tarifario, motor):
     try:
         return pipeline.procesar_carpeta(carpeta, corrida_id, cfg, tarifario, None, motor)
-    except Exception as e:  # una factura rota no detiene la corrida
-        logging.getLogger(__name__).error("factura %s: error %s", carpeta.name, type(e).__name__)
-        return None
+    except Exception as e:  # una factura rota no detiene la corrida; queda en facturas_con_error.txt
+        nombre = getattr(carpeta, "factura", None) or getattr(carpeta, "name", "?")
+        logging.getLogger(__name__).error("factura %s: error %s", nombre, type(e).__name__)
+        return ("error", nombre, f"{type(e).__name__}: {str(e)[:200]}")
 
 
 def _procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, workers: int):
     """Procesa en paralelo por procesos (el OCR usa CPU). Cada proceso limita sus hilos."""
     if workers <= 1:
         for c in carpetas:
-            if (r := _trabajo(c, corrida_id, cfg, tarifario, motor)) is not None:
-                yield r
+            yield _trabajo(c, corrida_id, cfg, tarifario, motor)
         return
     os.environ["VALIDADOR_OCR_HILOS"] = str(max(1, (os.cpu_count() or 2) // workers))
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futuros = [ex.submit(_trabajo, c, corrida_id, cfg, tarifario, motor) for c in carpetas]
         for f in as_completed(futuros):
-            if (r := f.result()) is not None:
-                yield r
+            yield f.result()
 
 
 def _procesar(args: argparse.Namespace) -> int:
@@ -81,45 +80,72 @@ def _procesar(args: argparse.Namespace) -> int:
         print("AVISO  sin tarifario cargado: no se validan tarifas (use 'validador tarifario importar').")
     motor = _motor(args, cfg, engine)
 
+    raiz = Path(args.ruta)
+    if args.por_lote:
+        # Cada subcarpeta de primer nivel es un lote (un mes, una radicación): una corrida y un
+        # reporte por lote. Los archivos sueltos de la raíz forman el lote "(raíz)".
+        lotes = [(d, f"{raiz.name} - {d.name}") for d in sorted(p for p in raiz.iterdir() if p.is_dir())]
+        if any(p.is_file() for p in raiz.iterdir()):
+            lotes.append((raiz, f"{raiz.name} - (raíz)"))
+    else:
+        lotes = [(raiz, salida_errores.nombre_eps(raiz))]
+    for ruta_lote, nombre in lotes:
+        _procesar_lote(args, cfg, engine, tarifario, motor, ruta_lote, nombre, solo_sueltos=args.por_lote and ruta_lote == raiz)
+    return 0
+
+
+def _procesar_lote(args, cfg, engine, tarifario, motor, raiz: Path, eps: str, solo_sueltos: bool = False) -> None:
     corrida_id = f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}-{secrets.token_hex(2)}"
     salida = Path(args.salida) / corrida_id.replace(":", "")
     if engine is not None:
         db.iniciar_corrida(engine, corrida_id, __version__)
 
-    carpetas = discover.carpetas_de_facturas(Path(args.ruta))
-    if args.limite:
-        carpetas = carpetas[: args.limite]
+    print(f"\n=== {eps}: buscando facturas en {raiz}…")
+    hallado = discover.descubrir(raiz, cfg, solo_sueltos=solo_sueltos)
+    facturas = hallado.facturas[: args.limite] if args.limite else hallado.facturas
     resultados = []
+    errores: list[str] = []
     t0 = time.perf_counter()
-    for i, r in enumerate(_procesar_todas(carpetas, corrida_id, cfg, tarifario, motor, args.workers), 1):
+    for i, r in enumerate(_procesar_todas(facturas, corrida_id, cfg, tarifario, motor, args.workers), 1):
+        if isinstance(r, tuple):
+            errores.append(f"{r[1]}\t{r[2]}")
+            continue
         if engine is not None:
             pipeline.marcar_duplicados(r, engine)
             db.guardar_resultado(engine, r)
         resultados.append(r)
         report.escribir_factura(r, salida)
-        print(f"\r  {i}/{len(carpetas)} facturas ({time.perf_counter() - t0:.0f} s)", end="", flush=True)
+        print(f"\r  {i}/{len(facturas)} facturas ({time.perf_counter() - t0:.0f} s)", end="", flush=True)
     print()
 
     resumen = report.resumen(corrida_id, resultados)
+    resumen["lote"] = {"nombre": eps, "ruta": str(raiz), "archivos_omitidos": len(hallado.omitidos)}
     salida.mkdir(parents=True, exist_ok=True)
     (salida / "resumen.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+    resumen["lote"]["facturas_con_error"] = len(errores)
+    if errores:
+        (salida / "facturas_con_error.txt").write_text("\n".join(errores) + "\n", encoding="utf-8")
+        (salida / "resumen.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+    if hallado.omitidos:
+        (salida / "archivos_omitidos.txt").write_text("\n".join(hallado.omitidos) + "\n", encoding="utf-8")
     report.escribir_casos(resultados, salida / "casos_con_posible_error.csv")
     report.escribir_propuestas(resultados, salida / "propuestas_correccion.json")
-    eps = salida_errores.nombre_eps(Path(args.ruta))
     carpeta_eps = salida_errores.preparar_destino(Path(args.errores), eps)
-    salida_errores.copiar_errores(resultados, carpeta_eps)
-    copiadas = {r.factura for r in resultados if salida_errores.discrepancias(r)}
+    if not args.sin_copiar:
+        salida_errores.copiar_errores(resultados, carpeta_eps)
+    copiadas = {r.factura for r in resultados if salida_errores.discrepancias(r)} if not args.sin_copiar else set()
     reporte = carpeta_eps / f"REPORTE {eps}.xlsx"
     salida_errores.escribir_excel(resultados, reporte, eps, corrida_id, copiadas)
     shutil.copy(reporte, salida / reporte.name)
     if engine is not None:
         db.cerrar_corrida(engine, corrida_id, resumen)
-    _imprimir_discrepancias(resultados)
-    print(f"\nFacturas: {len(resultados)} | con discrepancias: {len(copiadas)} | sin discrepancias: {len(resultados) - len(copiadas)}")
-    print(f"Carpetas con error: {carpeta_eps}")
+    con_discrepancias = sum(1 for r in resultados if salida_errores.discrepancias(r))
+    if con_discrepancias <= 50:
+        _imprimir_discrepancias(resultados)
+    print(f"\nFacturas: {len(resultados)} | con discrepancias: {con_discrepancias} | sin discrepancias: {len(resultados) - con_discrepancias}"
+          f" | archivos omitidos: {len(hallado.omitidos)} | facturas que fallaron: {len(errores)}")
     print(f"Reporte Excel:      {reporte}")
     print(f"Detalle técnico:    {salida}")
-    return 0
 
 
 def _motor(args: argparse.Namespace, cfg, engine) -> MotorReglas | None:
@@ -181,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--reglas", type=int, action="append", help="id de versión de reglas a usar en vez de la vigente (repetible)")
     pr.add_argument("--reglas-archivo", help="conjunto de reglas YAML/JSON sin pasar por la base (pruebas)")
     pr.add_argument("--sin-reglas", action="store_true", help="no aplica las reglas normativas")
+    pr.add_argument("--por-lote", action="store_true", help="cada subcarpeta de primer nivel es un lote con su propia corrida y reporte")
+    pr.add_argument("--sin-copiar", action="store_true", help="no copia las carpetas con error (solo reportes)")
     pr.set_defaults(func=_procesar)
 
     cli_referencia.registrar(sub)

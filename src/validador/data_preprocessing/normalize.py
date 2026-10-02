@@ -52,12 +52,17 @@ def nit(valor: str | None) -> str | None:
     return s if s.isdigit() else (re.sub(r"\D", "", s) or None)
 
 
+# Siglas de uso común -> código de la tabla TipoIdPISIS del RIPS.
+ALIAS_TIPO_DOCUMENTO = {"PEP": "PE", "PPT": "PT"}
+
+
 def documento_id(tipo: str | None, numero: str | None) -> str | None:
-    """'CC', ' 10.000.001 ' -> 'CC 10000001'."""
+    """'CC', ' 10.000.001 ' -> 'CC 10000001'; 'PEP' -> 'PE' (mismo permiso)."""
     if not numero:
         return None
     num = re.sub(r"[\s.\-]", "", str(numero)).upper()
     t = (tipo or "").strip().upper()
+    t = ALIAS_TIPO_DOCUMENTO.get(t, t)
     return f"{t} {num}" if t else num
 
 

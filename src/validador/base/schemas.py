@@ -187,6 +187,8 @@ class ResultadoFactura(BaseModel):
     factura: str
     # Carpeta original de la factura (para copiarla a revisión). No es dato del paciente.
     ruta_origen: str | None = None
+    # Archivos de la factura cuando no están todos en una carpeta (RIPS en carpeta hermana, zip...).
+    archivos_origen: list[str] = Field(default_factory=list)
     cufe: str | None
     estado: Severidad
     fuente_principal: Literal["rips", "xml", "pdf_factura", "ninguna"]

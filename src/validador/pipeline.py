@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 
 from .data_preprocessing import normalize
 from .attribution import votar
+from .compare import similitud_tokens
 from .base.config import Config, Severidad
 from .corrections.adapter import proponer
 from .ingest import (
@@ -135,6 +136,83 @@ def _agrupar(lineas: list[LineaServicio]) -> dict[str, tuple[Decimal, Decimal]]:
     return {k: (v[0], v[1]) for k, v in total.items()}
 
 
+def _alfanumerico(codigo: str) -> str:
+    return re.sub(r"[^0-9A-Z]", "", codigo.upper())
+
+
+# Similitud mínima de descripciones para emparejar líneas con códigos de sistemas distintos.
+SIMILITUD_DESCRIPCION = 0.5
+
+
+def _emparejar_codigos(
+    agrupado: dict[str, dict[str, tuple[Decimal, Decimal]]],
+    principal: str,
+    descripciones: dict[str, dict[str, str]] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Une códigos que son la misma línea con distinto código en cada fuente.
+
+    Casos reales: el XML trae el código interno ``P890207-1`` y el RIPS lo trae recortado a
+    ``P89020``; el XML usa un código interno de medicamento (``00100010 BUPIVACAINA…``) y el
+    RIPS el CUM (``52033-4 BUPIVACAINA…``). Dos códigos que están en fuentes distintas se
+    emparejan si tienen el mismo valor y además: uno es prefijo del otro (sin signos, al menos
+    5 caracteres), sus descripciones se parecen (SIMILITUD_DESCRIPCION) o su valor y cantidad
+    son únicos entre las líneas sin pareja. Modifica
+    ``agrupado`` y devuelve {código final: {fuente: código original}} de los emparejados.
+    """
+    descripciones = descripciones or {}
+    fuentes = list(agrupado)
+    presentes = {c: {f for f in fuentes if c in agrupado[f]} for c in {c for g in agrupado.values() for c in g}}
+    incompletos = sorted(c for c, fs in presentes.items() if len(fs) < len(fuentes))
+    usados: set[str] = set()
+
+    def descripcion(c: str) -> str | None:
+        return next((descripciones.get(f, {}).get(c) for f in presentes[c] if descripciones.get(f, {}).get(c)), None)
+
+    def afinidad(a: str, b: str) -> float:
+        if presentes[a] & presentes[b]:
+            return 0.0
+        valores = {agrupado[f][a][1] for f in presentes[a]} | {agrupado[f][b][1] for f in presentes[b]}
+        if len(valores) != 1:
+            return 0.0
+        corto, largo = sorted((_alfanumerico(a), _alfanumerico(b)), key=len)
+        if len(corto) >= 5 and largo.startswith(corto):
+            return 1.0
+        sim = similitud_tokens(descripcion(a), descripcion(b))
+        if sim >= SIMILITUD_DESCRIPCION:
+            return sim
+        # Valor y cantidad iguales y únicos entre las líneas sin pareja: la descripción puede venir
+        # dañada (codificación) o abreviada. Si el valor se repite, es ambiguo y no se empareja.
+        if unico(a, b) and unico(b, a):
+            return SIMILITUD_DESCRIPCION / 2
+        return 0.0
+
+    def unico(a: str, b: str) -> bool:
+        """b es la única línea sin pareja, fuera de las fuentes de a, con su mismo valor y cantidad."""
+        clave = {agrupado[f][a] for f in presentes[a]}
+        iguales = [
+            c for c in incompletos
+            if c != a and c not in usados and not (presentes[c] & presentes[a]) and {agrupado[f][c] for f in presentes[c]} == clave
+        ]
+        return iguales == [b]
+
+    emparejados: dict[str, dict[str, str]] = {}
+    for a in incompletos:
+        if a in usados:
+            continue
+        candidatos = [(afinidad(a, b), b) for b in incompletos if b != a and b not in usados]
+        puntaje, b = max(candidatos, default=(0.0, None))
+        if not puntaje or b is None:
+            continue
+        final = a if principal in presentes[a] else b
+        otro = b if final == a else a
+        for f in presentes[otro]:
+            agrupado[f][final] = agrupado[f].pop(otro)
+        emparejados[final] = {**{f: a for f in presentes[a]}, **{f: b for f in presentes[b]}}
+        presentes[final] = presentes[a] | presentes[b]
+        usados |= {a, b}
+    return emparejados
+
+
 def comparar_lineas(
     docs: dict[str, DocumentoExtraido],
     principal: str,
@@ -144,14 +222,18 @@ def comparar_lineas(
 ) -> list[ResultadoLinea]:
     fuentes = [f for f in FUENTES_LINEAS if f in docs and docs[f].lineas]
     agrupado = {f: _agrupar(docs[f].lineas) for f in fuentes}
+    desc_por_fuente = {f: {l.codigo: l.descripcion for l in docs[f].lineas if l.codigo and l.descripcion} for f in fuentes}
+    emparejados = _emparejar_codigos(agrupado, principal, desc_por_fuente)
+    alias = {orig: final for final, por_fuente in emparejados.items() for orig in por_fuente.values()}
     descripciones: dict[str, str] = {}
     tipos: dict[str, str] = {}
     for f in ("xml", "pdf_factura", "rips"):
         for l in docs[f].lineas if f in docs else []:
-            if l.codigo and l.descripcion:
-                descripciones.setdefault(l.codigo, l.descripcion)
-            if l.codigo and l.tipo_servicio:
-                tipos.setdefault(l.codigo, l.tipo_servicio)
+            codigo_final = alias.get(l.codigo, l.codigo)
+            if codigo_final and l.descripcion:
+                descripciones.setdefault(codigo_final, l.descripcion)
+            if codigo_final and l.tipo_servicio:
+                tipos.setdefault(codigo_final, l.tipo_servicio)
 
     resultados: list[ResultadoLinea] = []
     codigos = sorted({c for g in agrupado.values() for c in g})
@@ -162,6 +244,10 @@ def comparar_lineas(
         resultado: Severidad = "ok"
         sospechoso: str | None = None
 
+        if codigo in emparejados:
+            resultado = peor(resultado, cfg.lineas_si_codigo_difiere)
+            detalle = ", ".join(f"{f}={c}" for f, c in emparejados[codigo].items())
+            motivos.append(f"el código del servicio es distinto entre fuentes ({detalle}); mismo valor")
         faltan = [f for f in fuentes if f not in valores]
         if faltan:
             voto = votar({f: ("si" if f in valores else "no") for f in fuentes}, "exacta")
@@ -181,7 +267,7 @@ def comparar_lineas(
         if inicio and fin and "rips" in docs:
             fuera = [
                 l.fecha for l in docs["rips"].lineas
-                if (l.codigo or "SIN_CODIGO") == codigo and l.fecha and not (inicio <= l.fecha <= fin)
+                if alias.get(l.codigo, l.codigo or "SIN_CODIGO") == codigo and l.fecha and not (inicio <= l.fecha <= fin)
             ]
             if fuera:
                 resultado = peor(resultado, cfg.lineas_si_fecha_fuera_periodo)
@@ -358,7 +444,7 @@ def marcar_duplicados(r: ResultadoFactura, engine: Engine) -> None:
 
 
 def procesar_carpeta(
-    ruta: Path,
+    ruta: Path | discover.CarpetaFactura,
     corrida_id: str,
     cfg: Config,
     tarifario: Tarifario | None = None,
@@ -366,7 +452,7 @@ def procesar_carpeta(
     motor: MotorReglas | None = None,
 ) -> ResultadoFactura:
     t0 = time.perf_counter()
-    cf = discover.clasificar(ruta)
+    cf = ruta if isinstance(ruta, discover.CarpetaFactura) else discover.clasificar(ruta, cfg)
     docs = extraer(cf, cfg)
     t_digital = time.perf_counter()
 
@@ -376,9 +462,14 @@ def procesar_carpeta(
         extraidos = [d.campos[campo] for d in docs.values() if campo in d.campos]
         campos.append(evaluar_campo(campo, extraidos, cfg))
     periodo = _periodo(campos)
+    # El tarifario es de un prestador: no se aplica a facturas de otros (evita falsas diferencias).
+    nit_emisor = next((c.valor_final for c in campos if c.campo == "nit_emisor"), None)
+    if tarifario is not None and cfg.tarifario_nits_prestador and nit_emisor not in cfg.tarifario_nits_prestador:
+        tarifario = None
     lineas = comparar_lineas(docs, principal, tarifario, cfg, periodo)
 
     hallazgos = _hallazgos_documentos(cf, docs, cfg) + _hallazgos_codigos(docs, cfg) + _hallazgos_hc(docs, lineas, periodo, cfg)
+    hallazgos += [Hallazgo(tipo="documentos", resultado=cfg.si_versiones_distintas, motivo=c) for c in cf.conflictos]
     resumen_reglas = None
     if motor is not None:
         hallazgos_norma, resumen_reglas = motor.evaluar(docs, cf.presentes())
@@ -391,7 +482,8 @@ def procesar_carpeta(
     resultado = ResultadoFactura(
         corrida_id=corrida_id,
         factura=cf.factura,
-        ruta_origen=str(ruta.resolve()),
+        ruta_origen=str(cf.ruta.resolve()),
+        archivos_origen=[str(a) for a in cf.archivos] if not isinstance(ruta, Path) else [],
         cufe=cufe,
         estado=estado,
         fuente_principal=principal,

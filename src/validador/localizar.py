@@ -432,11 +432,47 @@ def _vecinos(doc: DocLayout, a: Ancla) -> list[Palabra]:
     return []
 
 
+# Tipos de documento de identificación (Res. 948 DT1): marcan el fin del nombre en una línea
+# como 'PEREZ GOMEZ JUAN CC 123 SUBSIDIADO'. 'DE' no se incluye: es parte de muchos nombres.
+TIPOS_DOCUMENTO = {"CC", "TI", "RC", "CE", "PA", "PE", "PT", "MS", "AS", "CN", "SC", "CD"}
+# Palabras de etiquetas vecinas que nunca son parte de un nombre ('NOMBRE: X Y NO. DE IDENTIFICACION').
+PALABRAS_ETIQUETA = {
+    "NO", "N", "NRO", "NUM", "NUMERO", "TIPO", "EDAD", "SEXO", "FECHA", "DOCUMENTO", "IDENTIFICACION", "REGIMEN",
+    "AFILIADO", "COTIZANTE", "BENEFICIARIO", "SUBSIDIADO", "CONTRIBUTIVO", "CABEZA", "TELEFONO", "DIRECCION",
+    "CIUDAD", "EPS", "PLAN", "CELULAR", "HISTORIA",
+}
+MAX_TOKENS_NOMBRE = 6
+
+
+def _nombre_de(palabras: list[Palabra]) -> str | None:
+    """El nombre que sigue a la etiqueta, o None si lo que sigue no tiene forma de nombre.
+
+    Termina en el primer número, tipo de documento u otra etiqueta ('EDAD:'). Es una frase y no
+    un nombre si trae más de MAX_TOKENS_NOMBRE palabras o comas en medio.
+    """
+    tokens: list[str] = []
+    for p in palabras:
+        t = p.texto.strip()
+        limpio = re.sub(r"[^A-Za-zÁÉÍÓÚÑÜáéíóúñü]", "", t)
+        palabra = normalize.sin_tildes(limpio).upper()
+        if re.search(r"\d", t) or palabra in TIPOS_DOCUMENTO or palabra in PALABRAS_ETIQUETA or (tokens and t.endswith(":")):
+            break
+        if not limpio:
+            continue
+        if re.search(r"[A-Za-z]\.[A-Za-z]", t):
+            return None  # 'C.MODERADORA': abreviatura de texto corrido, no un nombre
+        tokens.append(t)
+    if any(t.endswith((",", ";")) for t in tokens[:-1]) or not 2 <= len(tokens) <= MAX_TOKENS_NOMBRE:
+        return None
+    return normalize.nombre(" ".join(tokens))
+
+
 def extraer(doc: DocLayout, campo: str) -> str | None:
     tipo = TIPOS[campo]
     todas = anclas(doc, campo)
-    # Primero la etiqueta más específica del diccionario; luego el orden de lectura.
-    for a in sorted(todas, key=lambda a: (a.rango, a.fila)):
+    # Primero las etiquetas con dos puntos ('NOMBRE:'): una palabra suelta en un párrafo
+    # ('paciente quien asiste...') no es una etiqueta. Luego la más específica y el orden de lectura.
+    for a in sorted(todas, key=lambda a: (not a.dos_puntos, a.rango, a.fila)):
         pegado = [x for x in _piezas_etiqueta(a.palabras[-1]) if x != a.texto.split()[-1]]
         palabras = _vecinos(doc, a)
         if tipo == "codigo":
@@ -458,9 +494,12 @@ def extraer(doc: DocLayout, campo: str) -> str | None:
                 if re.fullmatch(r"[A-Za-z]{2,3}", t) and i + 1 < len(toks) and re.search(r"\d", toks[i + 1]):
                     return normalize.documento_id(t, toks[i + 1])
         elif tipo == "nombre":
-            letras = [p.texto for p in palabras if re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]", p.texto)]
-            if len(letras) >= 2:
-                return normalize.nombre(" ".join(letras))
+            if not a.dos_puntos and len(a.texto.split()) == 1:
+                # Palabra suelta sin dos puntos ('...el paciente cancela...'): solo es etiqueta si
+                # el valor va debajo, como encabezado de una tabla; a la derecha suele ser prosa.
+                palabras = [p for p in palabras if p.fila > a.fila]
+            if (nombre := _nombre_de(palabras)) is not None:
+                return nombre
         elif tipo == "dinero":
             for p in palabras:
                 if (v := _dinero_de(p)) is not None:

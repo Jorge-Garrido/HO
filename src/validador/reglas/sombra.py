@@ -29,20 +29,20 @@ def _estados(motor: MotorReglas | None, docs, presentes) -> dict[str, str]:
     return {regla_id: estado for estado, ids in resumen.por_estado.items() for regla_id in ids}
 
 
-def _evaluar(carpeta: Path, cfg: Config, base: MotorReglas | None, candidato: MotorReglas) -> tuple[str, dict, dict] | None:
+def _evaluar(carpeta: Path | discover.CarpetaFactura, cfg: Config, base: MotorReglas | None, candidato: MotorReglas) -> tuple[str, dict, dict] | None:
     from .. import pipeline  # import diferido: pipeline importa el motor
 
     try:
-        cf = discover.clasificar(carpeta)
+        cf = carpeta if isinstance(carpeta, discover.CarpetaFactura) else discover.clasificar(carpeta, cfg)
         docs = pipeline.extraer(cf, cfg)
         presentes = cf.presentes()
         return cf.factura, _estados(base, docs, presentes), _estados(candidato, docs, presentes)
     except Exception as e:  # una factura rota no detiene la prueba
-        log.error("factura %s: error %s", carpeta.name, type(e).__name__)
+        log.error("factura %s: error %s", getattr(carpeta, "factura", None) or getattr(carpeta, "name", "?"), type(e).__name__)
         return None
 
 
-def comparar(carpetas: list[Path], cfg: Config, base: MotorReglas | None, candidato: MotorReglas, workers: int = 1) -> dict:
+def comparar(carpetas: list, cfg: Config, base: MotorReglas | None, candidato: MotorReglas, workers: int = 1) -> dict:
     if workers > 1:
         os.environ["VALIDADOR_OCR_HILOS"] = str(max(1, (os.cpu_count() or 2) // workers))
         with ProcessPoolExecutor(max_workers=workers) as ex:

@@ -24,6 +24,13 @@ def _por_prioridad(valores: dict[str, str], cfg: Config) -> str | None:
     return next(iter(valores.values()), None)
 
 
+def _recortado(parcial: str, completo: str) -> bool:
+    """'7196996' es '17196996' sin sus primeros dígitos: el recorte de la imagen cortó el borde
+    izquierdo. Solo el inicio: un dígito de más al final en el RIPS es un error de digitación
+    que la autorización de la EPS debe señalar (ver test_ocr)."""
+    return 1 <= len(completo) - len(parcial) <= 2 and completo.endswith(parcial)
+
+
 def evaluar_campo(campo: str, extraidos: list[CampoExtraido], cfg: Config) -> ResultadoCampo:
     regla = cfg.campos[campo]
     valores = {e.fuente: e.valor for e in extraidos if e.valor}
@@ -51,6 +58,24 @@ def evaluar_campo(campo: str, extraidos: list[CampoExtraido], cfg: Config) -> Re
         base_etapa = {"etapa_resolucion": ext_autoridad.etapa, "confianza": ext_autoridad.confianza}
         if not distintos:
             return ResultadoCampo(valor_final=ref, resultado="ok", motivo="coincide con el documento de la EPS", **base, **base_etapa)
+        digitales = {valores[f] for f in distintos}
+        if len(digitales) == 1 and len(distintos) == len(valores) - 1:
+            digital = next(iter(digitales))
+            if regla.comparador == "conjunto" and set(ref.split(",")) < set(digital.split(",")):
+                # El escaneo trae una de las autorizaciones del RIPS (una por servicio).
+                return ResultadoCampo(
+                    valor_final=digital, resultado=regla.si_subconjunto, documento_sospechoso=autoridad,
+                    motivo=f"el documento de la EPS trae {ref}, una parte de {digital}: verificar el soporte de las demás",
+                    **base, **base_etapa,
+                )
+            if "," not in digital and _recortado(ref, digital):
+                # El escaneo lee el valor digital sin sus primeros dígitos: probablemente el recorte
+                # cortó el número. No se toma como evidencia contra las fuentes digitales.
+                return ResultadoCampo(
+                    valor_final=digital, resultado=cfg.si_escaneo_recortado, documento_sospechoso=autoridad,
+                    motivo=f"el escaneo parece cortado al inicio (lee {ref}; las fuentes digitales coinciden en {digital}); verificar a ojo",
+                    distancia=distancia_digitos(ref, digital), **base, **base_etapa,
+                )
         distancia = min(
             (distancia_digitos(ref, valores[f]) for f in distintos if "," not in valores[f] and "," not in ref), default=None
         )
@@ -63,6 +88,20 @@ def evaluar_campo(campo: str, extraidos: list[CampoExtraido], cfg: Config) -> Re
             **base,
             **base_etapa,
         )
+
+    if regla.comparador == "conjunto" and len(validos) > 1 and not invalidos:
+        conjuntos = {f: set(v.split(",")) for f, v in validos.items()}
+        mayor = max(conjuntos.values(), key=len)
+        if len({frozenset(c) for c in conjuntos.values()}) > 1 and all(c <= mayor for c in conjuntos.values()):
+            parciales = [f for f, c in conjuntos.items() if c != mayor]
+            completas = [f for f, c in conjuntos.items() if c == mayor]
+            return ResultadoCampo(
+                valor_final=",".join(sorted(mayor)),
+                resultado=regla.si_subconjunto,
+                motivo=f"{', '.join(parciales)} trae solo parte de los valores de {', '.join(completas)} (no hay valores contradictorios)",
+                documento_sospechoso=",".join(parciales),
+                **base,
+            )
 
     voto = votar(valores, regla.comparador)
     if voto.valor_mayoria is not None and not voto.sospechosos:
