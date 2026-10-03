@@ -23,7 +23,7 @@ from .data_preprocessing import normalize
 from .compare import levenshtein
 from .data_preprocessing.layout import DocLayout, Fila, Palabra
 
-TipoCampo = Literal["codigo", "documento", "nombre", "dinero", "fecha"]
+TipoCampo = Literal["codigo", "documento", "nombre", "dinero", "fecha", "sexo"]
 
 TIPOS: dict[str, TipoCampo] = {
     "numero_factura": "codigo",
@@ -38,6 +38,9 @@ TIPOS: dict[str, TipoCampo] = {
     "fecha_ingreso": "fecha",
     "fecha_egreso": "fecha",
     "cups": "codigo",
+    # Solo para desempatar la identidad cuando el documento del paciente difiere entre fuentes.
+    "fecha_nacimiento": "fecha",
+    "sexo": "sexo",
 }
 
 # Diccionario genérico: sinónimos habituales en documentos de salud en Colombia.
@@ -55,6 +58,8 @@ ETIQUETAS: dict[str, list[str]] = {
     "fecha_ingreso": ["FECHA DE INGRESO", "FECHA INGRESO"],
     "fecha_egreso": ["FECHA DE EGRESO", "FECHA EGRESO"],
     "cups": ["CODIGO CUPS", "SERVICIOS AUTORIZADOS", "PROCEDIMIENTOS AUTORIZADOS", "CUPS", "CODIGO", "COD"],
+    "fecha_nacimiento": ["FECHA DE NACIMIENTO", "FECHA NACIMIENTO", "NACIMIENTO"],
+    "sexo": ["SEXO BIOLOGICO", "SEXO", "GENERO"],
 }
 
 # Contextos que invalidan una etiqueta: si alguna de estas palabras está en la misma fila, la
@@ -64,6 +69,8 @@ ETIQUETAS_NEGATIVAS: dict[str, set[str]] = {
     # 'Modalidad: Electrónica - Número de Autorización: 18764… desde FCOB1 hasta FCOB9999 Vigencia…'
     "numero_autorizacion": {"NUMERACION", "RESOLUCION", "DIAN", "FACTURACION", "HABILITACION", "MODALIDAD",
                             "DESDE", "HASTA", "VIGENCIA", "PREFIJO", "RANGO"},
+    # El documento de otra persona del formulario: acompañante, responsable, profesional.
+    "paciente_id": {"ACOMPANANTE", "RESPONSABLE", "PARENTESCO", "MEDICO", "PROFESIONAL", "FIRMA", "FUNCIONARIO"},
 }
 
 # Etiquetas genéricas que, sueltas y sin dos puntos, no bastan: 'Nombre' encabeza también la tabla
@@ -258,6 +265,10 @@ def verificar(doc: DocLayout, campo: str, esperado: str) -> Verificacion:
         return _verificar_nombre(doc, campo, esperado, anc)
     if tipo == "dinero":
         return _verificar_por_parseo(doc, campo, normalize.dinero(esperado), anc, _dinero_de)
+    if tipo == "sexo":
+        leido = extraer(doc, campo)
+        estado = "no_encontrado" if leido is None else "confirmado" if leido == normalize.sexo(esperado) else "diferencia"
+        return Verificacion(campo, estado, leido)
     return _verificar_por_parseo(doc, campo, normalize.fecha(esperado), anc, _fecha_de)
 
 
@@ -596,6 +607,10 @@ def extraer(doc: DocLayout, campo: str) -> str | None:
             for p in palabras:
                 if (v := _fecha_de(p)) is not None:
                     return v.isoformat()
+        elif tipo == "sexo":
+            for p in palabras[:2]:
+                if (v := normalize.sexo(p.texto)) is not None:
+                    return v
     return None
 
 

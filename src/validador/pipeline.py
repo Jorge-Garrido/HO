@@ -468,6 +468,38 @@ def _hallazgos_hc(docs: dict[str, DocumentoExtraido], lineas: list[ResultadoLine
     return h
 
 
+def _desempatar_identidad(campos: list[ResultadoCampo], docs: dict[str, DocumentoExtraido], cfg: Config) -> None:
+    """Si el documento del paciente difiere en un soporte (HC, autorización), ¿es la misma persona?
+
+    El RIPS trae fecha de nacimiento y sexo, y la HC y la autorización también. Si coinciden, es
+    la misma persona con el documento mal registrado (aviso). Si no, el soporte puede ser de otra
+    persona (glosa S00202) y sigue grave. Sin esos datos no se decide nada.
+    """
+    c = next((x for x in campos if x.campo == "paciente_id"), None)
+    ref = docs.get("rips")
+    if c is None or c.resultado != "grave" or not c.documento_sospechoso or ref is None:
+        return
+    ref_fecha, ref_sexo = (ref.campos.get(k).valor if k in ref.campos else None for k in ("fecha_nacimiento", "sexo"))
+    if not ref_fecha:
+        return
+    veredictos = []
+    for fuente in c.documento_sospechoso.split(","):
+        d = docs.get(fuente)
+        fecha = d.campos["fecha_nacimiento"].valor if d and "fecha_nacimiento" in d.campos else None
+        sexo = d.campos["sexo"].valor if d and "sexo" in d.campos else None
+        if fecha is None:
+            veredictos.append("sin_dato")
+        elif fecha == ref_fecha and (sexo is None or ref_sexo is None or sexo == ref_sexo):
+            veredictos.append("misma")
+        else:
+            veredictos.append("otra")
+    if veredictos and all(v == "misma" for v in veredictos):
+        c.resultado = cfg.si_documento_misma_persona
+        c.motivo = f"{c.motivo}; misma persona: fecha de nacimiento y sexo coinciden con el RIPS (documento mal registrado)"
+    elif "otra" in veredictos:
+        c.motivo = f"{c.motivo}; la fecha de nacimiento o el sexo tampoco coinciden: el soporte puede ser de otra persona (glosa S00202)"
+
+
 def marcar_duplicados(r: ResultadoFactura, engine: Engine) -> None:
     """Consulta la base por CUFE. Va aparte porque en paralelo solo el proceso principal usa la base."""
     if not r.cufe:
@@ -500,6 +532,7 @@ def procesar_carpeta(
     for campo in cfg.campos:
         extraidos = [d.campos[campo] for d in docs.values() if campo in d.campos]
         campos.append(evaluar_campo(campo, extraidos, cfg))
+    _desempatar_identidad(campos, docs, cfg)
     periodo = _periodo(campos)
     # El tarifario es de un prestador: no se aplica a facturas de otros (evita falsas diferencias).
     nit_emisor = next((c.valor_final for c in campos if c.campo == "nit_emisor"), None)

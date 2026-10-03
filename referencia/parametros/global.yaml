@@ -219,3 +219,28 @@ parametros:
     PEP: PE
     PPT: PT
   alcance: global
+- tipo: etiqueta_campo
+  clave: fecha_nacimiento
+  valor:
+  - FECHA DE NACIMIENTO
+  - FECHA NACIMIENTO
+  - NACIMIENTO
+  alcance: global
+- tipo: etiqueta_campo
+  clave: sexo
+  valor:
+  - SEXO BIOLOGICO
+  - SEXO
+  - GENERO
+  alcance: global
+- tipo: etiqueta_negativa
+  clave: paciente_id
+  valor:
+  - ACOMPANANTE
+  - FIRMA
+  - FUNCIONARIO
+  - MEDICO
+  - PARENTESCO
+  - PROFESIONAL
+  - RESPONSABLE
+  alcance: global

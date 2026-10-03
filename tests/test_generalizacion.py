@@ -277,3 +277,41 @@ def test_encabezado_generico_nombre_no_es_el_paciente():
     impuestos = DocLayout(filas=[fila(0, [("Nombre", 10), ("Base", 200), ("Porcentaje", 300)]),
                                  fila(1, [("SERVICIOS", 10), ("GENERALES", 55), ("100", 200)])])
     assert extraer(impuestos, "paciente_nombre") is None
+
+
+def test_desempate_de_identidad_por_fecha_de_nacimiento_y_sexo():
+    from validador.base.schemas import ResultadoCampo
+    from validador.pipeline import _desempatar_identidad
+
+    def docs(fecha_hc, sexo_hc):
+        rips = DocumentoExtraido(fuente="rips")
+        rips.poner("fecha_nacimiento", "1980-01-01")
+        rips.poner("sexo", "F")
+        hc = DocumentoExtraido(fuente="hc")
+        hc.poner("fecha_nacimiento", fecha_hc)
+        hc.poner("sexo", sexo_hc)
+        return {"rips": rips, "hc": hc}
+
+    def campo():
+        return [ResultadoCampo(campo="paciente_id", valor_final="CC 1", valores_por_fuente={"rips": "CC 1", "hc": "CC 2"},
+                               resultado="grave", motivo="hc difiere", documento_sospechoso="hc")]
+
+    c = campo(); _desempatar_identidad(c, docs("1980-01-01", "F"), Config())
+    assert c[0].resultado == "aviso" and "misma persona" in c[0].motivo
+    c = campo(); _desempatar_identidad(c, docs("2015-06-30", "M"), Config())
+    assert c[0].resultado == "grave" and "S00202" in c[0].motivo
+    c = campo(); _desempatar_identidad(c, docs(None, None), Config())
+    assert c[0].resultado == "grave" and c[0].motivo == "hc difiere"  # sin datos no se decide
+
+
+def test_documento_del_acompanante_no_es_el_del_paciente():
+    from validador.data_preprocessing.layout import DocLayout, Fila
+    from validador.localizar import extraer
+
+    def fila(i, texto):
+        return Fila(1, i, [Palabra(t, 10 + 60 * j, 20 * i, 60 + 60 * j, 20 * i + 8, 1, i) for j, t in enumerate(texto.split())])
+
+    doc = DocLayout(filas=[fila(0, "ACOMPAÑANTE: MADRE IDENTIFICACION: CC 52000000"), fila(1, "IDENTIFICACION: TI 1000001")])
+    assert extraer(doc, "paciente_id") == "TI 1000001"
+    from validador.data_preprocessing import normalize
+    assert normalize.sexo("Femenino") == "F" and normalize.sexo("MASCULINO") == "M" and normalize.sexo("otro") is None

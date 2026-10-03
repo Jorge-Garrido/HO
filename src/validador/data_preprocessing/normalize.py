@@ -152,3 +152,14 @@ def fecha(valor: str | None) -> date | None:
         except ValueError:
             continue
     return None
+
+
+_SEXO = {"F": "F", "FEMENINO": "F", "MUJER": "F", "M": "M", "MASCULINO": "M", "HOMBRE": "M", "H": "M"}
+
+
+def sexo(valor: str | None) -> str | None:
+    """'Femenino', 'F', 'MUJER' -> 'F'; 'Masculino', 'M', 'HOMBRE' -> 'M' (codSexo del RIPS)."""
+    if not valor:
+        return None
+    primera = (texto(str(valor)) or "").split()
+    return _SEXO.get(re.sub(r"[^A-Z]", "", primera[0])) if primera else None

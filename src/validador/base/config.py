@@ -164,6 +164,9 @@ class Config(BaseModel):
     autorizacion_no_legible: Severidad = "aviso"
     # El escaneo lee el número digital sin sus primeros dígitos (recorte de imagen cortado).
     si_escaneo_recortado: Severidad = "aviso"
+    # El documento del paciente difiere en la HC o la autorización, pero la fecha de nacimiento y el
+    # sexo coinciden con el RIPS: es la misma persona con el documento mal registrado.
+    si_documento_misma_persona: Severidad = "aviso"
 
     # Motor de reglas normativas (las reglas, catálogos y contratos viven en la base de datos).
     reglas_habilitadas: bool = True

@@ -54,6 +54,9 @@ def desde_dict(datos: dict, doc: DocumentoExtraido | None = None) -> DocumentoEx
     )
     doc.extra["fecha_nacimiento"] = usuario.get("fechaNacimiento")
     doc.extra["sexo"] = usuario.get("codSexo")
+    nacimiento = normalize.fecha(str(usuario.get("fechaNacimiento") or ""))
+    doc.poner("fecha_nacimiento", nacimiento.isoformat() if nacimiento else None)
+    doc.poner("sexo", normalize.sexo(usuario.get("codSexo")))
 
     total = Decimal(0)
     moderador = Decimal(0)

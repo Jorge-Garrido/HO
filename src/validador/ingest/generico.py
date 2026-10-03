@@ -18,8 +18,9 @@ CAMPOS_POR_DOCUMENTO = {
         "numero_factura", "cufe", "nit_emisor", "nit_eps", "paciente_id", "paciente_nombre",
         "numero_autorizacion", "id_interno_paciente", "valor_total", "fecha_ingreso", "fecha_egreso",
     ],
-    "hc": ["paciente_id", "paciente_nombre", "id_interno_paciente"],
-    "autorizacion_digital": ["paciente_id", "paciente_nombre", "id_interno_paciente"],
+    # fecha_nacimiento y sexo solo sirven para desempatar la identidad (no se comparan como campos).
+    "hc": ["paciente_id", "paciente_nombre", "id_interno_paciente", "fecha_nacimiento", "sexo"],
+    "autorizacion_digital": ["paciente_id", "paciente_nombre", "id_interno_paciente", "fecha_nacimiento", "sexo"],
 }
 # El encabezado de la HC y de la autorización se repite en cada página: basta la primera.
 MAX_PAGINAS = {"pdf_factura": None, "hc": 1, "autorizacion_digital": 1}
@@ -41,6 +42,8 @@ def normalizar(campo: str, texto: str | None) -> str | None:
         return normalize.nombre(texto)
     if tipo == "dinero":
         return normalize.dinero_texto(normalize.dinero(texto))
+    if tipo == "sexo":
+        return normalize.sexo(texto)
     if tipo == "fecha":
         f = normalize.fecha(texto.replace("/", "-")) if texto[:4].isdigit() else normalize.fecha(texto)
         return f.isoformat() if f else None
@@ -54,7 +57,7 @@ def campo(doc: layout.DocLayout, nombre: str, fuente: str, esperados: set[str]) 
     for esperado in sorted(esperados):
         v = localizar.verificar(doc, nombre, esperado)
         if v.estado == "confirmado":
-            return CampoExtraido(valor=esperado, valor_crudo=v.valor_encontrado, pagina=v.pagina, bbox=list(v.bbox), **base)
+            return CampoExtraido(valor=esperado, valor_crudo=v.valor_encontrado, pagina=v.pagina, bbox=list(v.bbox) if v.bbox else None, **base)
         if v.estado == "diferencia":
             diferencias.append(v)
         elif v.estado == "confirmado_sin_contexto":
