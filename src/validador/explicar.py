@@ -199,6 +199,16 @@ def _explicar_linea(r: ResultadoFactura, l: ResultadoLinea) -> tuple[str, str, s
             partes.append(f"El servicio {l.codigo}{desc} no coincide entre documentos: {m}.")
             verificar.append(f"{arch['RIPS']} y {arch['FEV']}: líneas del servicio {l.codigo}")
             accion.append("Revisar qué documento tiene el servicio correcto.")
+        elif m.startswith("el RIPS reporta un código distinto"):
+            partes.append(f"El servicio {l.codigo}{desc} tiene un código en el RIPS distinto al de la factura, con el mismo valor: {m}.")
+            verificar.append(f"{arch['RIPS']}: \"codProcedimiento\"/\"codTecnologiaSalud\"; {arch['XML']}: código de la línea")
+            accion.append("Corregir el código en el RIPS para que sea el mismo de la factura.")
+        elif m.startswith("el ítem usa códigos de sistemas distintos"):
+            partes.append(f"El servicio {l.codigo}{desc} aparece con códigos de sistemas distintos entre documentos (p. ej. interno y CUM): {m}.")
+            verificar.append(f"{arch['RIPS']} y {arch['XML']}: código de la línea")
+            accion.append("Confirmar que es el mismo ítem; si la EPS exige un sistema de codificación, usarlo en todos los documentos.")
+        else:
+            partes.append(f"El servicio {l.codigo}{desc}: {m}.")
     return " ".join(partes), " | ".join(dict.fromkeys(verificar)), " ".join(dict.fromkeys(accion))
 
 

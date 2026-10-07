@@ -1,13 +1,54 @@
-# Datos de pacientes: nunca al repositorio
+# --- Datos de pacientes: nunca al repositorio (Ley 1581) ---------------------
 nuevaeps/
 salidas/
-*.db
-*.sqlite
-
-.venv/
-__pycache__/
-*.egg-info/
-.pytest_cache/
 CON ERROR/
 COOSALUD EXITOSAS/
 # Cualquier otra carpeta de facturas de EPS que se agregue en la raíz debe ir aquí.
+muestra_errores*/
+# Red de seguridad: documentos de facturas sueltos (PDF, RIPS, XML, comprimidos).
+# Un archivo de prueba anonimizado se agrega con `git add -f`.
+*.pdf
+*.zip
+*.rar
+*.7z
+*.xml
+*.json
+*.tif
+*.tiff
+*.jpg
+*.jpeg
+*.png
+
+# --- Bases de datos y logs ------------------------------------------------------
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.log
+
+# --- Secretos -------------------------------------------------------------------
+.env
+.env.*
+
+# --- Python ---------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Editor y sistema -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*

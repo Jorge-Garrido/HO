@@ -1,7 +1,7 @@
 # Guía del código: cómo funciona, cómo generaliza y cómo se mantiene
 
 Para desarrollo y mantenimiento. Complementa `ARQUITECTURA_REGLAS.md` (motor de reglas y base) y
-`PLAN_PARAMETROS_EN_BD.md` (parámetros por EPS). Estado al 2026-10-02: ~8.400 líneas en `src/`,
+`PLAN_PARAMETROS_EN_BD.md` (parámetros por EPS). Resultados de las pruebas en `RESULTADOS.md`. Estado al 2026-10-02: ~8.400 líneas en `src/`,
 111 pruebas, probado con 4 EPS (NUEVA EPS, COOSALUD, FAMISANAR, FOMAG) y 2 IPS (Hospital San Rafael
 y una óptica): 7.624 facturas.
 
@@ -181,7 +181,7 @@ códigos, prosa contra etiqueta.
 
 | Formato | Antes → después (facturas con *grave*) | Qué se tocó | Tiempo |
 |---|---|---|---|
-| Óptica en COOSALUD | 99 % con discrepancias → 491 *grave* (de los cuales 417 son un error real sistemático) | 4 arreglos genéricos + sinónimos de HC | ~1 día |
+| Óptica en COOSALUD | 99 % con discrepancias → 480 *grave* (de los cuales 417 son un error real sistemático) | 4 arreglos genéricos + sinónimos de HC | ~1 día |
 | FAMISANAR (misma IPS) | 97 % → 281 | 1 arreglo genérico (prosa) | horas |
 | FOMAG (misma IPS, otra EPS) | 842 → 71 | 3 arreglos genéricos + 1 alias | horas |
 

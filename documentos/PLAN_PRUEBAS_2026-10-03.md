@@ -6,6 +6,8 @@ faltan del disco externo y (C) empezar la migración de parámetros a la base.
 Datos de pacientes: todo queda en `~/datos_disco_d/` y `salidas/` (fuera de git). Al terminar,
 decidir qué se borra (sección D).
 
+**Resultado consolidado (corrida final `disco_d2/v5`): ver `RESULTADOS.md`.**
+
 ## Estado de partida (2026-10-02)
 
 - Rama `motor-reglas`. Regresión contra `linea-base-v0`: 101/101 NUEVA EPS idénticas; COOSALUD
